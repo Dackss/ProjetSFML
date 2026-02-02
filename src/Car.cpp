@@ -29,10 +29,10 @@ void Car::update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const Col
     float turnFactor = std::min(speed / 20.f, 1.f);
 
     /// Handle rotation input (Q: left, D: right)
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Q)) {
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Q) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left)) {
         mSprite.rotate(sf::degrees(-Config::CAR_MAX_TURN_RATE * dt * turnFactor));
     }
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D)) {
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right)) {
         mSprite.rotate(sf::degrees(Config::CAR_MAX_TURN_RATE * dt * turnFactor));
     }
 
@@ -46,13 +46,12 @@ void Car::update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const Col
     float accel = onGrass ? Config::CAR_ACCELERATION * 0.4f : Config::CAR_ACCELERATION;
 
     /// Handle acceleration (Z: forward, S: brake)
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z)) {
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up)) {
         mVelocity += forward * accel * dt;
     }
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S)) {
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down)) {
         mVelocity -= forward * Config::CAR_BRAKING * dt;
     }
-
     /// Update speed after acceleration
     speed = std::sqrt(mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y);
 
@@ -67,7 +66,8 @@ void Car::update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const Col
 
     /// Apply friction based on input and terrain
     if (speed > 0.1f) {
-        float friction = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) ? Config::CAR_FRICTION * 0.5f : Config::CAR_FRICTION;
+        float friction = (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up))
+                         ? Config::CAR_FRICTION * 0.5f : Config::CAR_FRICTION;
         if (onGrass) {
             friction *= 0.6f; ///< Reduce friction on grass
         }

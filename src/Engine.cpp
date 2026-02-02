@@ -62,10 +62,9 @@ void Engine::processEvents() {
         if (event.is<sf::Event::Closed>()) {
             mWindow.close();
         }
-        else if (event.is<sf::Event::MouseButtonPressed>() &&
-                 (mGameManager->isInMenu() || mGameManager->isFinished())) {
-            sf::Vector2f mousePos = mWindow.mapPixelToCoords(sf::Mouse::getPosition(mWindow));
-            if (mMenu->isButtonClicked(mousePos)) {
+        else if (event.is<sf::Event::KeyPressed>() && (mGameManager->isInMenu() || mGameManager->isFinished())) {
+            auto keyEvent = event.getIf<sf::Event::KeyPressed>();
+            if (keyEvent->code == sf::Keyboard::Key::Enter || keyEvent->code == sf::Keyboard::Key::Space) {
                 mGameManager->reset();
                 mGameManager->startCountdown();
                 mWorld->reset();
