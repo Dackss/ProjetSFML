@@ -59,12 +59,33 @@ void Engine::run() {
 void Engine::processEvents() {
     while (auto eventOpt = mWindow.pollEvent()) {
         const sf::Event& event = *eventOpt;
+
         if (event.is<sf::Event::Closed>()) {
             mWindow.close();
         }
-        else if (event.is<sf::Event::KeyPressed>() && (mGameManager->isInMenu() || mGameManager->isFinished())) {
-            auto keyEvent = event.getIf<sf::Event::KeyPressed>();
-            if (keyEvent->code == sf::Keyboard::Key::Enter || keyEvent->code == sf::Keyboard::Key::Space) {
+        // Gestion combinée Souris ET Clavier pour le menu
+        else if (mGameManager->isInMenu() || mGameManager->isFinished()) {
+            bool startRequested = false;
+
+            // 1. Clic Souris
+            if (const auto* mouseEvent = event.getIf<sf::Event::MouseButtonPressed>()) {
+                if (mouseEvent->button == sf::Mouse::Button::Left) {
+                    sf::Vector2f mousePos = mWindow.mapPixelToCoords(sf::Mouse::getPosition(mWindow));
+                    if (mMenu->isButtonClicked(mousePos)) {
+                        startRequested = true;
+                    }
+                }
+            }
+            // 2. Touche Clavier (Entrée ou Espace)
+            else if (const auto* keyEvent = event.getIf<sf::Event::KeyPressed>()) {
+                if (keyEvent->code == sf::Keyboard::Key::Enter ||
+                    keyEvent->code == sf::Keyboard::Key::Space) {
+                    startRequested = true;
+                    }
+            }
+
+            // Lancer le jeu si demandé
+            if (startRequested) {
                 mGameManager->reset();
                 mGameManager->startCountdown();
                 mWorld->reset();

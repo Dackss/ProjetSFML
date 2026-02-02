@@ -5,25 +5,37 @@
 /// @brief Constructor
 /// @param window Render window
 /// @param assetsManager Resource manager
+#include "World.h"
+#include "Config.h"
+#include <stdexcept>
+
 World::World(sf::RenderWindow& window, AssetsManager& assetsManager)
-        : mWindow(window), mAssetsManager(assetsManager), mTrack(assetsManager.getTexture("circuit"), window.getSize()),
-          mPlayer(assetsManager.getTexture("voiture")), mGhost(assetsManager), mLapCount(0) {
-    /// Load collision mask
+        : mWindow(window), mAssetsManager(assetsManager),
+          mTrack(assetsManager.getTexture("circuit")),
+          mPlayer(assetsManager.getTexture("voiture")),
+          mGhost(assetsManager),
+          mLapCount(0) {
+
+    // Chargement du masque
     if (!mCollisionMask.loadFromFile(Config::TEXTURES_PATH + "circuit_mask.png")) {
         throw std::runtime_error("Failed to load circuit_mask.png");
     }
 
-    /// Calculate track scale
-    sf::Vector2u textureSize = mAssetsManager.getTexture("circuit").getSize();
-    float windowWidth = window.getSize().x;
-    float windowHeight = window.getSize().y;
-    mTrackScale = std::max(windowWidth / textureSize.x, windowHeight / textureSize.y);
-    mTrackSize = sf::Vector2f(textureSize.x * mTrackScale, textureSize.y * mTrackScale);
+    // --- CORRECTION MAJEURE ICI ---
+    // On calcule l'échelle pour que le circuit ait TOUJOURS la taille prévue dans Config.h
+    // Peu importe si l'image est 4K ou HD, elle sera redimensionnée pour faire 'WINDOW_WIDTH' pixels de large.
+    sf::Vector2u texSize = mAssetsManager.getTexture("circuit").getSize();
 
-    /// Apply scale to collision mask
-    mCollisionMask.setScale(mTrackScale);
+    // On utilise Config::WINDOW_WIDTH pour garantir que la voiture (placée selon Config) soit sur la route
+    float scaleFactor = static_cast<float>(Config::WINDOW_WIDTH) / static_cast<float>(texSize.x);
 
-    /// Set collision mask for checkpoints and ghost
+    // On applique cette échelle partout
+    mTrack.setScale(scaleFactor);
+    mCollisionMask.setScale(scaleFactor);
+
+    // On stocke la taille réelle du monde pour la caméra
+    mTrackSize = sf::Vector2f(texSize.x * scaleFactor, texSize.y * scaleFactor);
+
     mCheckpoints.setCollisionMask(&mCollisionMask);
     mGhost.setCollisionMask(&mCollisionMask);
 }
@@ -33,18 +45,22 @@ World::World(sf::RenderWindow& window, AssetsManager& assetsManager)
 /// @param camera Camera view
 /// @see https://www.sfml-dev.org/documentation/3.0.0/classsf_1_1View.php#a24d0503c14555f9d4f5374ad80968023
 void World::update(sf::Time deltaTime, sf::View& camera) {
-    /// Update game objects
     mPlayer.update(deltaTime, getTrackBounds(), mCollisionMask);
     mCheckpoints.update(mPlayer.getCar().getPosition());
     mGhost.update(mPlayer.getCar(), mCheckpoints);
 
-    /// Center camera on car
+    // Caméra centrée sur la voiture, bornée au circuit
     sf::Vector2f carPos = mPlayer.getCar().getPosition();
     sf::Vector2f viewSize = camera.getSize();
     float minX = viewSize.x / 2.f;
     float maxX = mTrackSize.x - viewSize.x / 2.f;
     float minY = viewSize.y / 2.f;
     float maxY = mTrackSize.y - viewSize.y / 2.f;
+
+    // Sécurité si le circuit est plus petit que la caméra (rare mais possible)
+    if (maxX < minX) maxX = minX;
+    if (maxY < minY) maxY = minY;
+
     carPos.x = std::max(minX, std::min(carPos.x, maxX));
     carPos.y = std::max(minY, std::min(carPos.y, maxY));
     camera.setCenter(carPos);

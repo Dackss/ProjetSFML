@@ -4,20 +4,17 @@
 #include <SFML/Graphics.hpp>
 #include "Entity.h"
 
-/// @brief Represents the game track
 class Track : public Entity {
 public:
-    /// @brief Constructor
-    /// @param texture Track texture
-    /// @param windowSize Window size for scaling
-    explicit Track(sf::Texture& texture, const sf::Vector2u& windowSize);
-
-    /// @brief Render track
-    /// @param window Render target
+    explicit Track(sf::Texture& texture);
     void render(sf::RenderWindow& window) override;
+    sf::FloatRect getGlobalBounds() const;
+
+    // Ajout de la méthode pour redimensionner proprement
+    void setScale(float scale);
 
 private:
-    sf::Sprite mSprite; ///< Track sprite
+    sf::Sprite mSprite;
 };
 
 #endif // TRACK_H

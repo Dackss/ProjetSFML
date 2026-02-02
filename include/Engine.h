@@ -4,7 +4,7 @@
 #include "World.h"
 #include "AssetsManager.h"
 #include "Menu.h"
-#include "HUD.h"
+#include "Hud.h"
 #include "Camera.h"
 #include "Config.h"
 #include "GameManager.h"

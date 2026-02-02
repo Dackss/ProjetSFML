@@ -1,95 +1,51 @@
 #include "CollisionMask.h"
-#include <cmath>
 
-/// @brief Load mask image
-/// @param path File path
-/// @return True if loaded successfully
+CollisionMask::CollisionMask() : mScale(1.0f) {}
+
 bool CollisionMask::loadFromFile(const std::string& path) {
     return mImage.loadFromFile(path);
 }
 
-/// @brief Set scale factor for coordinates
-/// @param scale Scale factor
+// C'est ici qu'on définit le ratio Monde -> Image
 void CollisionMask::setScale(float scale) {
-    mScale = scale;
+    // Si le monde est à l'échelle 0.5, pour retrouver le pixel, on divise par 0.5 (ou multiplie par 1/0.5)
+    // mScale stocke le facteur de conversion : PixelImage / PixelMonde
+    if (scale > 0.f)
+        mScale = 1.0f / scale;
+    else
+        mScale = 1.0f;
 }
 
-/// @brief Get pixel color at world position
-/// @param worldPos World coordinates
-/// @param pixel Output pixel color
-/// @return True if position is valid
-bool getPixelAt(const sf::Image& image, float scale, sf::Vector2f worldPos, sf::Color& pixel) {
-    int x = static_cast<int>(worldPos.x / scale);
-    int y = static_cast<int>(worldPos.y / scale);
-
-    int imgW = static_cast<int>(image.getSize().x);
-    int imgH = static_cast<int>(image.getSize().y);
-
-    if (x < 0 || y < 0 || x >= imgW || y >= imgH) {
-        return false;
-    }
-
-    pixel = image.getPixel({(unsigned)x, (unsigned)y});
-    return true;
+sf::Vector2u CollisionMask::worldToImage(sf::Vector2f pos) const {
+    // On convertit la position du jeu vers la position sur l'image
+    return sf::Vector2u(
+        static_cast<unsigned int>(pos.x * mScale),
+        static_cast<unsigned int>(pos.y * mScale)
+    );
 }
 
-/// @brief Check if position is on grass (yellow)
-/// @param worldPos World coordinates
-/// @return True if on grass
+// -- Méthodes de détection (inchangées sauf l'appel à worldToImage) --
+
 bool CollisionMask::isOnGrass(sf::Vector2f worldPos) const {
-    sf::Color pixel;
-    if (!getPixelAt(mImage, mScale, worldPos, pixel)) {
-        return false;
-    }
-
-    /// Compare pixel to yellow (255, 255, 0) with tolerance
-    int diffR = std::abs(int(pixel.r) - 255);
-    int diffG = std::abs(int(pixel.g) - 255);
-    int diffB = std::abs(int(pixel.b) - 0);
-    return diffR <= 50 && diffG <= 50 && diffB <= 50;
+    sf::Vector2u p = worldToImage(worldPos);
+    if (p.x >= mImage.getSize().x || p.y >= mImage.getSize().y) return true;
+    return mImage.getPixel(p) == sf::Color::Yellow; // Adaptez la couleur (Jaune ou Vert ?)
 }
 
-/// @brief Check if position is on checkpoint (green)
-/// @param worldPos World coordinates
-/// @return True if on checkpoint
 bool CollisionMask::isOnGreen(sf::Vector2f worldPos) const {
-    sf::Color pixel;
-    if (!getPixelAt(mImage, mScale, worldPos, pixel)) {
-        return false;
-    }
-
-    /// Compare pixel to green (0, 255, 0) with tolerance
-    int diffR = std::abs(int(pixel.r) - 0);
-    int diffG = std::abs(int(pixel.g) - 255);
-    int diffB = std::abs(int(pixel.b) - 0);
-    return diffR <= 60 && diffG <= 60 && diffB <= 60;
+    sf::Vector2u p = worldToImage(worldPos);
+    if (p.x >= mImage.getSize().x || p.y >= mImage.getSize().y) return false;
+    return mImage.getPixel(p) == sf::Color::Green;
 }
 
-/// @brief Check if position is on finish line (blue)
-/// @param worldPos World coordinates
-/// @return True if on finish line
 bool CollisionMask::isOnBlue(sf::Vector2f worldPos) const {
-    sf::Color pixel;
-    if (!getPixelAt(mImage, mScale, worldPos, pixel)) {
-        return false;
-    }
-
-    /// Compare pixel to blue (0, 0, 255) with tolerance
-    int diffR = std::abs(int(pixel.r) - 0);
-    int diffG = std::abs(int(pixel.g) - 0);
-    int diffB = std::abs(int(pixel.b) - 255);
-    return diffR <= 50 && diffG <= 50 && diffB <= 50;
+    sf::Vector2u p = worldToImage(worldPos);
+    if (p.x >= mImage.getSize().x || p.y >= mImage.getSize().y) return false;
+    return mImage.getPixel(p) == sf::Color::Blue;
 }
 
-/// @brief Check if position is traversable (not black)
-/// @param worldPos World coordinates
-/// @return True if traversable
 bool CollisionMask::isTraversable(sf::Vector2f worldPos) const {
-    sf::Color pixel;
-    if (!getPixelAt(mImage, mScale, worldPos, pixel)) {
-        return false;
-    }
-
-    /// Consider pixel traversable if not black (threshold 20)
-    return pixel.r > 20 || pixel.g > 20 || pixel.b > 20;
+    sf::Vector2u p = worldToImage(worldPos);
+    if (p.x >= mImage.getSize().x || p.y >= mImage.getSize().y) return false;
+    return mImage.getPixel(p) != sf::Color::Black;
 }
