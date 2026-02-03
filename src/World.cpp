@@ -70,13 +70,42 @@ void World::update(sf::Time deltaTime, sf::View& camera) {
 /// @param isPlaying True if game is in playing state
 /// @see https://www.sfml-dev.org/documentation/3.0.0/classsf_1_1RenderWindow.php#a839bbf336bd120d2a91d87a47f5296b2
 void World::render(bool isPlaying, float alpha) {
-    mTrack.render(mWindow);
+    // 1. Définir la zone visible par la caméra
+    // On agrandit légèrement la zone (buffer) pour éviter que les objets disparaissent "trop tôt" sur les bords
+    sf::View currentView = mWindow.getView();
+    sf::FloatRect viewBounds(
+        currentView.getCenter() - currentView.getSize() / 2.f, // Top-Left
+        currentView.getSize()
+    );
+
+    // Ajout d'une marge de sécurité (ex: 50 pixels)
+    float buffer = 50.f;
+    viewBounds.position.x -= buffer;
+    viewBounds.position.y -= buffer;
+    viewBounds.size.x += buffer * 2.f;
+    viewBounds.size.y += buffer * 2.f;
+
+    // 2. CULLING DU CIRCUIT
+    // Le circuit est grand, mais si on zoome ou si la map est immense, ça sert.
+    // mTrackSize est stocké dans World (voir votre constructeur)
+    sf::FloatRect trackRect({0.f, 0.f}, mTrackSize);
+
+    // Si le rectangle du circuit touche la vue, on dessine
+    if (viewBounds.findIntersection(trackRect)) { // SFML 3: findIntersection retourne un optional<Rect>, qui est 'true' si valide
+        mTrack.render(mWindow);
+    }
+
+    // 3. CULLING DU GHOST
+    // Le fantôme peut être loin derrière ou devant. On ne le dessine que s'il est visible.
+    // Supposons que le Ghost a une position accessible. S'il n'en a pas, on dessine toujours.
+    // Ici, on fait appel au render normal, on pourrait optimiser DANS GhostManager::render.
     mGhost.render(mWindow, isPlaying);
 
-    // IMPORTANT : Vous devez vous assurer que Player::render accepte aussi "alpha"
-    // et qu'il appelle mCar.render(window, alpha);
+    // 4. JOUEUR
+    // Le joueur est quasi toujours au centre, donc le culling est inutile (et risqué), on dessine toujours.
     mPlayer.render(mWindow, alpha);
 }
+
 /// @brief Get track bounds
 /// @return Track bounding rectangle
 sf::FloatRect World::getTrackBounds() const {

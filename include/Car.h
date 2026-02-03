@@ -4,15 +4,13 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include "CollisionMask.h"
-#include <memory> // Nécessaire pour std::unique_ptr
+#include <memory>
 
 class Car {
 public:
     explicit Car(sf::Texture& texture);
 
     void update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const CollisionMask& mask);
-
-    // Rendu avec interpolation (alpha)
     void render(sf::RenderWindow& window, float alpha = 1.0f);
 
     sf::Vector2f getPosition() const;
@@ -25,23 +23,21 @@ public:
     float getRotation() const;
     float getSpeed() const;
 
-    // Configuration audio différée
     void setupAudio(const sf::SoundBuffer& buffer);
 
 private:
-    // Helper pour l'interpolation d'angle
     static float lerpAngle(float start, float end, float t);
 
 private:
     sf::Sprite mSprite;
     sf::Vector2f mVelocity;
+    sf::Sprite mShadow;
 
-    // État précédent pour interpolation
     sf::Vector2f mPreviousPosition;
     float mPreviousRotation;
 
-    // SFML 3 : On utilise un pointeur pour pouvoir l'initialiser plus tard
     std::unique_ptr<sf::Sound> mEngineSound;
+    float mLastPitch = 1.0f;
 };
 
 #endif

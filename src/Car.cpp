@@ -5,7 +5,7 @@
 #include <cmath>
 
 Car::Car(sf::Texture& texture)
-    : mSprite(texture), mVelocity(0.f, 0.f)
+    : mSprite(texture),  mVelocity(0.f, 0.f), mShadow(texture) // <--- AJOUT DE mShadow(texture)
 {
     mSprite.setPosition({Config::CAR_INITIAL_POS_X, Config::CAR_INITIAL_POS_Y});
     mSprite.setRotation(sf::degrees(Config::CAR_INITIAL_ROTATION));
@@ -18,9 +18,21 @@ Car::Car(sf::Texture& texture)
     mPreviousPosition = mSprite.getPosition();
     mPreviousRotation = mSprite.getRotation().asDegrees();
 
-    // Note: mEngineSound est un unique_ptr, il est nullptr par défaut (ce qui est valide)
-}
+    // Remplacer la configuration de l'ombre par :
+    mShadow.setTexture(texture);
+    mShadow.setOrigin(mSprite.getOrigin());
 
+    // Une ombre semi-transparente un peu plus sombre
+    mShadow.setColor(sf::Color(0, 0, 0, 90));
+
+    // On garde une taille lègèrement supérieure (105%) pour que l'ombre déborde un peu
+    float shadowScaleFactor = 1.05f;
+    mShadow.setScale({Config::CAR_SCALE * shadowScaleFactor, Config::CAR_SCALE * shadowScaleFactor});
+
+    // La position initiale importe peu car écrasée dans render, mais on peut l'initier
+    mShadow.setPosition(mSprite.getPosition());
+    mShadow.setRotation(mSprite.getRotation());
+}
 void Car::setupAudio(const sf::SoundBuffer& buffer) {
     // C'est ici qu'on crée réellement le son avec son buffer (obligatoire en SFML 3)
     mEngineSound = std::make_unique<sf::Sound>(buffer);
@@ -30,12 +42,17 @@ void Car::setupAudio(const sf::SoundBuffer& buffer) {
 }
 
 void Car::update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const CollisionMask& mask) {
-    // 1. Sauvegarde pour interpolation
+    // 1. Sauvegarde pour interpolation (Fluidité)
     mPreviousPosition = mSprite.getPosition();
     mPreviousRotation = mSprite.getRotation().asDegrees();
 
     float dt = deltaTime.asSeconds();
-    float speed = std::sqrt(mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y);
+
+    // OPTIMISATION MATH : Calcul unique de la vitesse (et de son carré)
+    // On utilise speedSq pour les comparaisons quand c'est possible (évite sqrt)
+    float speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
+    float speed = std::sqrt(speedSq);
+
     float turnFactor = std::min(speed / 20.f, 1.f);
 
     // --- INPUTS ---
@@ -44,15 +61,19 @@ void Car::update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const Col
     bool joyLeft = joyX < -40.f;
     bool joyRight = joyX > 40.f;
 
+    // Utilisation de constantes pré-calculées pour la rotation
+    float rotationAmount = Config::CAR_MAX_TURN_RATE * dt * turnFactor;
+
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Q) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) || joyLeft) {
-        mSprite.rotate(sf::degrees(-Config::CAR_MAX_TURN_RATE * dt * turnFactor));
+        mSprite.rotate(sf::degrees(-rotationAmount));
     }
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right) || joyRight) {
-        mSprite.rotate(sf::degrees(Config::CAR_MAX_TURN_RATE * dt * turnFactor));
+        mSprite.rotate(sf::degrees(rotationAmount));
     }
 
-    float angleDeg = mSprite.getRotation().asDegrees();
-    float angleRad = angleDeg * 3.14159265359f / 180.f;
+    // Calcul du vecteur avant (Forward)
+    // Optimisation possible : stocker le vecteur forward si utilisé ailleurs, mais ici cos/sin est nécessaire après rotation
+    float angleRad = mSprite.getRotation().asRadians(); // SFML 3 permet asRadians() direct souvent, sinon asDegrees() * conversion
     sf::Vector2f forward(std::cos(angleRad), std::sin(angleRad));
 
     bool onGrass = mask.isOnGrass(mSprite.getPosition());
@@ -61,55 +82,84 @@ void Car::update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const Col
     bool btnAccel = sf::Joystick::isButtonPressed(joystickId, 0);
     bool btnBrake = sf::Joystick::isButtonPressed(joystickId, 1) || sf::Joystick::isButtonPressed(joystickId, 2);
 
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) || btnAccel) {
+    // Regroupement des inputs booléens
+    bool inputUp = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) || btnAccel;
+    bool inputDown = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) || btnBrake;
+
+    if (inputUp) {
         mVelocity += forward * accel * dt;
     }
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) || btnBrake) {
+    if (inputDown) {
         mVelocity -= forward * Config::CAR_BRAKING * dt;
     }
 
-    // --- AUDIO DYNAMIQUE ---
-    // On vérifie si le son est initialisé avant de l'utiliser
+    // --- AUDIO DYNAMIQUE OPTIMISÉ ---
     if (mEngineSound) {
-        if (speed < 10.f) {
-            mEngineSound->setPitch(0.8f);
-        } else {
-            mEngineSound->setPitch(0.8f + (speed / Config::CAR_MAX_SPEED) * 1.7f);
+        float targetPitch = (speed < 10.f) ? 0.8f : (0.8f + (speed / Config::CAR_MAX_SPEED) * 1.7f);
+
+        // On ne change le pitch que si la différence est audible (> 0.05)
+        // Nécessite float mLastPitch dans Car.h, sinon retirez le if
+        if (std::abs(mLastPitch - targetPitch) > 0.05f) {
+            mEngineSound->setPitch(targetPitch);
+            mLastPitch = targetPitch;
         }
     }
 
     // --- PHYSIQUE ---
-    speed = std::sqrt(mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y);
+    // Recalcul de speedSq uniquement si la vélocité a changé significativement (ici on assume que oui)
+    speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
 
-    if (onGrass && speed > Config::CAR_MAX_SPEED_GRASS) {
+    // Optimisation : Comparaison au carré pour éviter sqrt
+    float maxSpeedGrassSq = Config::CAR_MAX_SPEED_GRASS * Config::CAR_MAX_SPEED_GRASS;
+
+    if (onGrass && speedSq > maxSpeedGrassSq) {
         mVelocity *= (1.f - dt * 0.5f);
-        speed = std::sqrt(mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y);
+
+        // Ici on a besoin de la vraie vitesse pour normaliser
+        speed = std::sqrt(speedSq);
         if (speed < Config::CAR_MAX_SPEED_GRASS + 1.f) {
-            mVelocity = (mVelocity / speed) * Config::CAR_MAX_SPEED_GRASS;
+            if (speed > 0.1f) // Protection division par zéro
+                mVelocity = (mVelocity / speed) * Config::CAR_MAX_SPEED_GRASS;
         }
+        // Mise à jour de speedSq après modif
+        speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
     }
 
-    if (speed > 0.1f) {
-        bool isAccelerating = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) || btnAccel;
-        float friction = isAccelerating ? Config::CAR_FRICTION * 0.5f : Config::CAR_FRICTION;
+    if (speedSq > 0.01f) { // 0.1f * 0.1f
+        float friction = inputUp ? Config::CAR_FRICTION * 0.5f : Config::CAR_FRICTION;
         if (onGrass) friction *= 0.6f;
+
+        // Friction simplifiée sans normalisation coûteuse si vitesse faible ?
+        // On garde la logique originale mais on calcule speed une fois
+        speed = std::sqrt(speedSq);
         mVelocity -= (mVelocity / speed) * friction * dt;
     }
 
-    if (!onGrass && speed > Config::CAR_MAX_SPEED) {
+    speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
+    float maxSpeedSq = Config::CAR_MAX_SPEED * Config::CAR_MAX_SPEED;
+
+    if (!onGrass && speedSq > maxSpeedSq) {
+        // Normalisation rapide
+        speed = std::sqrt(speedSq);
         mVelocity = (mVelocity / speed) * Config::CAR_MAX_SPEED;
     }
 
+    // Drift / Adhérence latérale
     float forwardSpeed = mVelocity.x * forward.x + mVelocity.y * forward.y;
     sf::Vector2f lateral = mVelocity - forward * forwardSpeed;
+
+    // speed est à jour approximativement (suffisant pour le drift factor)
     float drift = 0.7f - std::min(speed / 100.f, 0.4f);
     mVelocity = forward * forwardSpeed + lateral * drift;
 
     sf::Vector2f newPos = mSprite.getPosition() + mVelocity * dt;
 
+    // Bornes du circuit
     sf::FloatRect bounds = mSprite.getGlobalBounds();
     float w = bounds.size.x / 2.f;
     float h = bounds.size.y / 2.f;
+
+    // Clamp
     newPos.x = std::max(trackBounds.position.x + w, std::min(newPos.x, trackBounds.position.x + trackBounds.size.x - w));
     newPos.y = std::max(trackBounds.position.y + h, std::min(newPos.y, trackBounds.position.y + trackBounds.size.y - h));
 
@@ -135,23 +185,31 @@ sf::Vector2f Car::getInterpolatedPosition(float alpha) const {
 }
 
 void Car::render(sf::RenderWindow& window, float alpha) {
-    // 1. Sauvegarde État Réel
-    sf::Vector2f realPos = mSprite.getPosition();
-    float realRot = mSprite.getRotation().asDegrees();
+    // 1. Calculs d'interpolation (comme avant)
+    sf::Vector2f currentPos = mSprite.getPosition();
+    sf::Vector2f interpPos = mPreviousPosition * (1.f - alpha) + currentPos * alpha;
 
-    // 2. Calcul État Visuel Interpolé
-    sf::Vector2f interpPos = getInterpolatedPosition(alpha);
-    float interpRot = lerpAngle(mPreviousRotation, realRot, alpha);
+    float currentRot = mSprite.getRotation().asDegrees();
+    float interpRot = lerpAngle(mPreviousRotation, currentRot, alpha);
 
-    // 3. Dessin
+    // 2. RENDU DE L'OMBRE AVEC DÉCALAGE
+    // On définit la direction de la lumière (ici, ombre vers le bas-droite)
+    sf::Vector2f shadowOffset(6.f, 6.f);
+
+    mShadow.setPosition(interpPos + shadowOffset);
+    mShadow.setRotation(sf::degrees(interpRot)); // L'ombre tourne avec la voiture
+
+    window.draw(mShadow);
+
+    // 3. RENDU DE LA VOITURE (Au dessus)
     mSprite.setPosition(interpPos);
     mSprite.setRotation(sf::degrees(interpRot));
 
     window.draw(mSprite);
 
-    // 4. Restauration État Réel
-    mSprite.setPosition(realPos);
-    mSprite.setRotation(sf::degrees(realRot));
+    // 4. Restauration pour la physique
+    mSprite.setPosition(currentPos);
+    mSprite.setRotation(sf::degrees(currentRot));
 }
 
 sf::Vector2f Car::getPosition() const { return mSprite.getPosition(); }
