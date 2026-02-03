@@ -20,7 +20,7 @@ public:
 
     /// @brief Render player car
     /// @param window Render target
-    void render(sf::RenderWindow& window);
+    void render(sf::RenderWindow& window, float alpha = 1.0f);
 
     /// @brief Reset player state
     void reset();

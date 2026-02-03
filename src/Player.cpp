@@ -20,10 +20,9 @@ void Player::update(sf::Time deltaTime, const sf::FloatRect& bounds, const Colli
 
 /// @brief Render player car
 /// @param window Render target
-void Player::render(sf::RenderWindow& window) {
-    mCar.render(window);
+void Player::render(sf::RenderWindow& window, float alpha) {
+    mCar.render(window, alpha);
 }
-
 /// @brief Reset player state
 void Player::reset() {
     /// Reset car position and rotation

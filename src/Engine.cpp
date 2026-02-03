@@ -64,8 +64,9 @@ void Engine::run() {
             processEvents();
             update(mTimePerFrame);
         }
+        float alpha = timeSinceLastUpdate.asSeconds() / mTimePerFrame.asSeconds();
 
-        render();
+        render(alpha);
     }
 }
 
@@ -166,7 +167,7 @@ void Engine::update(sf::Time deltaTime) {
 }
 
 /// @brief Render game
-void Engine::render() {
+void Engine::render(float alpha) {
     mWindow.clear(sf::Color(50, 50, 50));
 
     if (mGameManager->isInMenu() || mGameManager->isFinished()) {
@@ -175,8 +176,20 @@ void Engine::render() {
         mMenu->render(mWindow, mGameManager->isFinished());
     } else {
         /// Render world and HUD
+
+        // --- AMÉLIORATION FLUIDITÉ CAMÉRA ---
+        // On place la caméra sur la position *interpolée* de la voiture.
+        // Si on ne fait pas ça, la voiture sera fluide mais tremblera par rapport à la caméra.
+        if (mGameManager->isPlaying()) {
+            sf::Vector2f interpolatedCarPos = mWorld->getCar().getInterpolatedPosition(alpha);
+            mCameraManager->update(mCamera, interpolatedCarPos, mWorld->getTrackBounds().size);
+        }
+
         mWindow.setView(mCamera);
-        mWorld->render(mGameManager->isPlaying());
+
+        // On passe alpha au World pour qu'il dessine la voiture interpolée
+        mWorld->render(mGameManager->isPlaying(), alpha);
+
         mWindow.setView(mWindow.getDefaultView());
         mHud->render(mWindow);
     }

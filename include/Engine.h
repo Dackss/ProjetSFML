@@ -30,7 +30,7 @@ private:
     void update(sf::Time deltaTime);
 
     /// @brief Render game
-    void render();
+    void render(float alpha = 1.0f);
 
 private:
     sf::RenderWindow mWindow;

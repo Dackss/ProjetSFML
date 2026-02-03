@@ -24,7 +24,7 @@ public:
 
     /// @brief Render world
     /// @param isPlaying True if game is in playing state
-    void render(bool isPlaying);
+    void render(bool isPlaying, float alpha = 1.0f);
 
     /// @brief Get track bounds
     /// @return Track bounding rectangle

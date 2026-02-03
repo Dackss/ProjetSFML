@@ -24,7 +24,7 @@ Car::Car(sf::Texture& texture)
 void Car::setupAudio(const sf::SoundBuffer& buffer) {
     // C'est ici qu'on crée réellement le son avec son buffer (obligatoire en SFML 3)
     mEngineSound = std::make_unique<sf::Sound>(buffer);
-    mEngineSound->setLoop(true);
+    mEngineSound->setLooping(true);
     mEngineSound->setVolume(50.f);
     mEngineSound->play();
 }
@@ -155,9 +155,15 @@ void Car::render(sf::RenderWindow& window, float alpha) {
 }
 
 sf::Vector2f Car::getPosition() const { return mSprite.getPosition(); }
-void Car::setPosition(const sf::Vector2f& pos) { mSprite.setPosition(pos); }
+void Car::setPosition(const sf::Vector2f& pos) {
+    mSprite.setPosition(pos);
+    mPreviousPosition = pos;
+}
 const sf::Sprite& Car::getSprite() const { return mSprite; }
 void Car::resetVelocity() { mVelocity = {0.f, 0.f}; }
-void Car::setRotation(float angle) { mSprite.setRotation(sf::degrees(angle)); }
+void Car::setRotation(float angle) {
+    mSprite.setRotation(sf::degrees(angle));
+    mPreviousRotation = angle;
+}
 float Car::getRotation() const { return mSprite.getRotation().asDegrees(); }
 float Car::getSpeed() const { return std::sqrt(mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y); }

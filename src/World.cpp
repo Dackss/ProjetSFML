@@ -69,12 +69,14 @@ void World::update(sf::Time deltaTime, sf::View& camera) {
 /// @brief Render world
 /// @param isPlaying True if game is in playing state
 /// @see https://www.sfml-dev.org/documentation/3.0.0/classsf_1_1RenderWindow.php#a839bbf336bd120d2a91d87a47f5296b2
-void World::render(bool isPlaying) {
+void World::render(bool isPlaying, float alpha) {
     mTrack.render(mWindow);
     mGhost.render(mWindow, isPlaying);
-    mPlayer.render(mWindow);
-}
 
+    // IMPORTANT : Vous devez vous assurer que Player::render accepte aussi "alpha"
+    // et qu'il appelle mCar.render(window, alpha);
+    mPlayer.render(mWindow, alpha);
+}
 /// @brief Get track bounds
 /// @return Track bounding rectangle
 sf::FloatRect World::getTrackBounds() const {
