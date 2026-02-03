@@ -6,11 +6,21 @@
 #include "CollisionMask.h"
 #include <memory>
 
+/// @brief Structure regroupant les commandes de pilotage
+struct CarControls {
+    bool accelerate = false;
+    bool brake = false;
+    bool turnLeft = false;
+    bool turnRight = false;
+};
+
 class Car {
 public:
     explicit Car(sf::Texture& texture);
 
-    void update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const CollisionMask& mask);
+    // Signature modifiée : on passe les inputs ici
+    void update(sf::Time deltaTime, const CarControls& inputs, const sf::FloatRect& trackBounds, const CollisionMask& mask);
+
     void render(sf::RenderWindow& window, float alpha = 1.0f);
 
     sf::Vector2f getPosition() const;
@@ -31,7 +41,6 @@ private:
 private:
     sf::Sprite mSprite;
     sf::Vector2f mVelocity;
-    sf::Sprite mShadow;
 
     sf::Vector2f mPreviousPosition;
     float mPreviousRotation;

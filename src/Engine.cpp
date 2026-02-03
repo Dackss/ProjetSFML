@@ -2,20 +2,35 @@
 #include "ScoreManager.h"
 #include <SFML/Window/Joystick.hpp>
 #include <stdexcept>
+#include <cmath>
 
-/// @brief Constructor
+/// @brief Helper to maintain aspect ratio
+static void adjustView(const sf::Vector2u& windowSize, sf::View& view, float targetRatio) {
+    float windowRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
+
+    if (windowRatio > targetRatio) {
+        // Fenêtre plus large que le jeu (Bandes noires sur les côtés)
+        float scaleFactor = targetRatio / windowRatio;
+        view.setViewport(sf::FloatRect({(1.f - scaleFactor) / 2.f, 0.f}, {scaleFactor, 1.f}));
+    } else {
+        // Fenêtre plus haute que le jeu (Bandes noires en haut/bas)
+        float scaleFactor = windowRatio / targetRatio;
+        view.setViewport(sf::FloatRect({0.f, (1.f - scaleFactor) / 2.f}, {1.f, scaleFactor}));
+    }
+}
+
 Engine::Engine()
-    // Initialisation en Plein Écran par défaut pour l'Arcade
+    // On utilise getDesktopMode() qui cible l'écran principal par défaut
     : mWindow(sf::VideoMode::getDesktopMode(), "RetroRush", sf::Style::Default, sf::State::Fullscreen),
       mCamera(sf::FloatRect({0.f, 0.f}, {Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT})),
       mTimePerFrame(sf::seconds(Config::TIME_PER_FRAME)),
       mIsFullscreen(true)
 {
-    // mWindow.setFramerateLimit(static_cast<unsigned int>(Config::FPS)); // Désactivé
     mWindow.setVerticalSyncEnabled(true);
-
-    // Masquer le curseur pour l'immersion
     mWindow.setMouseCursorVisible(false);
+
+    // Ajustement immédiat du ratio pour l'écran actuel
+    adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
 
     /// Load textures
     std::string circuitPath = Config::TEXTURES_PATH + "circuit.png";
@@ -27,7 +42,6 @@ Engine::Engine()
 
     /// Initialize world
     mWorld = std::make_unique<World>(mWindow, mAssetsManager);
-    mCamera.setViewport(sf::FloatRect({0.f, 0.f}, {1.f, 1.f}));
 
     /// Load font
     if (!mAssetsManager.loadFont("arial", Config::FONTS_PATH + "arial.ttf")) {
@@ -38,9 +52,7 @@ Engine::Engine()
     sf::Font& font = mAssetsManager.getFont("arial");
     sf::Texture& bgTexture = mAssetsManager.getTexture("circuit");
 
-    // Passage de la texture au menu
     mMenu = std::make_unique<Menu>(font, bgTexture);
-
     mHud = std::make_unique<HUD>(font);
     mCameraManager = std::make_unique<Camera>(Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT);
     mGameManager = std::make_unique<GameManager>();
@@ -48,17 +60,14 @@ Engine::Engine()
     mCameraManager->update(mCamera, mWorld->getCar().getPosition(), mWorld->getTrackBounds().size);
 }
 
-/// @brief Run game loop
 void Engine::run() {
     sf::Clock clock;
     sf::Time timeSinceLastUpdate = sf::Time::Zero;
 
-    /// Main game loop
     while (mWindow.isOpen()) {
         sf::Time deltaTime = clock.restart();
         timeSinceLastUpdate += deltaTime;
 
-        /// Update at fixed intervals (Physique stable)
         while (timeSinceLastUpdate > mTimePerFrame) {
             timeSinceLastUpdate -= mTimePerFrame;
             processEvents();
@@ -70,13 +79,16 @@ void Engine::run() {
     }
 }
 
-/// @brief Process window events
 void Engine::processEvents() {
     while (auto eventOpt = mWindow.pollEvent()) {
         const sf::Event& event = *eventOpt;
 
         if (event.is<sf::Event::Closed>()) {
             mWindow.close();
+        }
+        else if (const auto* resizeEvent = event.getIf<sf::Event::Resized>()) {
+            // Gestion du redimensionnement (garde le ratio)
+            adjustView(resizeEvent->size, mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
         }
         else if (const auto* keyEvent = event.getIf<sf::Event::KeyPressed>()) {
             if (keyEvent->code == sf::Keyboard::Key::Escape) {
@@ -87,15 +99,21 @@ void Engine::processEvents() {
                 mIsFullscreen = !mIsFullscreen;
 
                 auto state = mIsFullscreen ? sf::State::Fullscreen : sf::State::Windowed;
-                mWindow.create(sf::VideoMode::getDesktopMode(), "RetroRush", sf::Style::Default, state);
+                // Si on passe en fenêtré, on met une taille standard, sinon DesktopMode
+                sf::VideoMode mode = mIsFullscreen ? sf::VideoMode::getDesktopMode() : sf::VideoMode({1280, 720});
 
-                // Important : Réappliquer les paramètres après recréation de la fenêtre
+                mWindow.create(mode, "RetroRush", sf::Style::Default, state);
+
+                // Réappliquer les paramètres
                 mWindow.setVerticalSyncEnabled(true);
                 mWindow.setMouseCursorVisible(!mIsFullscreen);
+
+                // Réajuster la vue après recréation
+                adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
             }
         }
 
-        // GESTION MENU (Clavier / Manette)
+        // GESTION MENU
         if (mGameManager->isInMenu() || mGameManager->isFinished()) {
             bool startRequested = false;
 
@@ -111,83 +129,62 @@ void Engine::processEvents() {
             }
 
             if (startRequested) {
-                // Si on relance après une fin de course, on sauvegarde le score
                 if (mGameManager->isFinished()) {
                     ScoreManager::saveTime(mGameManager->getRaceTime());
-                    mMenu->updateHighScores(); // Rafraîchir l'affichage des scores
+                    mMenu->updateHighScores();
                 }
 
                 mGameManager->reset();
                 mGameManager->startCountdown();
                 mWorld->reset();
-
-                // Recaler la caméra après le reset
                 mCameraManager->update(mCamera, mWorld->getCar().getPosition(), mWorld->getTrackBounds().size);
             }
         }
     }
 }
 
-/// @brief Update game state
-/// @param deltaTime Time since last update
 void Engine::update(sf::Time deltaTime) {
     bool justStarted = mGameManager->justStartedRace();
-
-    /// Update game manager
     mGameManager->update();
 
-    /// Start player clock on race start
     if (justStarted) {
         mWorld->getPlayer().startClock();
     }
 
-    /// Update world and camera during gameplay
     if (mGameManager->isPlaying()) {
         mWorld->update(deltaTime, mCamera);
         mCameraManager->update(mCamera, mWorld->getCar().getPosition(), mWorld->getTrackBounds().size);
 
-        /// Handle lap completion
         if (mWorld->isLapComplete() && mWorld->getLapCount() >= 1) {
             float raceTime = mGameManager->getRaceTime();
             mGameManager->markLapFinished(raceTime);
             mMenu->setResultText(mGameManager->getResultText());
-
-            /// Update ghost and HUD with times
             mWorld->getGhost().submitTime(mWorld->getPlayer().getElapsedTime());
             mHud->setBestTimes(mWorld->getGhost().getBestTimes());
         }
     }
 
-    /// Update HUD display
-    float speed = mWorld->getCar().getSpeed() * 3.6f; ///< Convert to km/h
+    float speed = mWorld->getCar().getSpeed() * 3.6f;
     float time = mGameManager->getRaceTime();
     int countdown = mGameManager->isCountdown() ? mGameManager->getCountdownValue() : -2;
     mHud->update(speed, time, countdown, mWindow.getSize());
     mHud->setBestTimes(mWorld->getGhost().getBestTimes());
 }
 
-/// @brief Render game
 void Engine::render(float alpha) {
-    mWindow.clear(sf::Color(50, 50, 50));
+    mWindow.clear(sf::Color(20, 20, 20)); // Fond légèrement gris pour les bandes noires
 
     if (mGameManager->isInMenu() || mGameManager->isFinished()) {
-        /// Render menu
         mWindow.setView(mWindow.getDefaultView());
         mMenu->render(mWindow, mGameManager->isFinished());
     } else {
-        /// Render world and HUD
-
-        // --- AMÉLIORATION FLUIDITÉ CAMÉRA ---
-        // On place la caméra sur la position *interpolée* de la voiture.
-        // Si on ne fait pas ça, la voiture sera fluide mais tremblera par rapport à la caméra.
         if (mGameManager->isPlaying()) {
             sf::Vector2f interpolatedCarPos = mWorld->getCar().getInterpolatedPosition(alpha);
             mCameraManager->update(mCamera, interpolatedCarPos, mWorld->getTrackBounds().size);
         }
 
+        // On applique la caméra avec le viewport ajusté (Letterbox)
         mWindow.setView(mCamera);
-
-        // On passe alpha au World pour qu'il dessine la voiture interpolée
         mWorld->render(mGameManager->isPlaying(), alpha);
 
         mWindow.setView(mWindow.getDefaultView());

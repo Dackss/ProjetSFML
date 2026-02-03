@@ -2,15 +2,18 @@
 #define TRACK_H
 
 #include <SFML/Graphics.hpp>
-#include "Entity.h"
+// #include "Entity.h" <-- Supprimé
 
-class Track : public Entity {
+// Track n'hérite plus de Entity
+class Track {
 public:
     explicit Track(sf::Texture& texture);
-    void render(sf::RenderWindow& window) override;
+
+    // Retrait de 'override' car Entity n'existe plus
+    void render(sf::RenderWindow& window);
+
     sf::FloatRect getGlobalBounds() const;
 
-    // Ajout de la méthode pour redimensionner proprement
     void setScale(float scale);
 
 private:

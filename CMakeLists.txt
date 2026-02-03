@@ -19,11 +19,11 @@ FetchContent_MakeAvailable(SFML)
 set(SOURCE_DIR "${CMAKE_SOURCE_DIR}/src")
 set(INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
 
+# Entity.cpp a été retiré de cette liste
 set(SOURCES
 		${CMAKE_SOURCE_DIR}/main.cpp
 		${SOURCE_DIR}/Engine.cpp
 		${SOURCE_DIR}/World.cpp
-		${SOURCE_DIR}/Entity.cpp
 		${SOURCE_DIR}/Car.cpp
 		${SOURCE_DIR}/Track.cpp
 		${SOURCE_DIR}/CheckpointManager.cpp
@@ -36,10 +36,10 @@ set(SOURCES
 		src/GameManager.cpp
 )
 
+# Entity.h a été retiré de cette liste
 set(HEADERS
 		${INCLUDE_DIR}/Engine.h
 		${INCLUDE_DIR}/World.h
-		${INCLUDE_DIR}/Entity.h
 		${INCLUDE_DIR}/Car.h
 		${INCLUDE_DIR}/Track.h
 		${INCLUDE_DIR}/CheckpointManager.h

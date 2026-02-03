@@ -1,65 +1,62 @@
 #include "Player.h"
 #include "Config.h"
+#include <SFML/Window/Keyboard.hpp>
+#include <SFML/Window/Joystick.hpp>
 
-/// @brief Constructor
-/// @param carTexture Car texture
 Player::Player(sf::Texture& carTexture)
-        : mCar(carTexture), mDistance(0.f), mLap(0) {}
+    : mCar(carTexture), mDistance(0.f), mLap(0) {}
 
-/// @brief Update player state
-/// @param deltaTime Time since last update
-/// @param bounds Track bounds
-/// @param mask Collision mask
 void Player::update(sf::Time deltaTime, const sf::FloatRect& bounds, const CollisionMask& mask) {
-    /// Update car movement
-    mCar.update(deltaTime, bounds, mask);
+    // 1. Lire les entrées (Clavier / Manette)
+    CarControls inputs;
+    unsigned int joystickId = 0;
 
-    /// Update distance traveled
+    // Axe X du joystick pour tourner
+    float joyX = sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Axis::X);
+    bool joyLeft = joyX < -40.f;
+    bool joyRight = joyX > 40.f;
+
+    // Boutons pour accélérer/freiner (A = 0, B = 1, X = 2 sur manette Xbox générique)
+    bool btnAccel = sf::Joystick::isButtonPressed(joystickId, 0);
+    bool btnBrake = sf::Joystick::isButtonPressed(joystickId, 1) || sf::Joystick::isButtonPressed(joystickId, 2);
+
+    // Mapping des touches
+    inputs.turnLeft = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Q) ||
+                      sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) ||
+                      joyLeft;
+
+    inputs.turnRight = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) ||
+                       sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right) ||
+                       joyRight;
+
+    inputs.accelerate = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) ||
+                        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) ||
+                        btnAccel;
+
+    inputs.brake = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) ||
+                   sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) ||
+                   btnBrake;
+
+    // 2. Envoyer les commandes à la voiture
+    mCar.update(deltaTime, inputs, bounds, mask);
+
+    // 3. Mise à jour stats
     mDistance += mCar.getSpeed() * deltaTime.asSeconds();
 }
 
-/// @brief Render player car
-/// @param window Render target
+// Le reste reste inchangé
 void Player::render(sf::RenderWindow& window, float alpha) {
     mCar.render(window, alpha);
 }
-/// @brief Reset player state
 void Player::reset() {
-    /// Reset car position and rotation
     mCar.setPosition({Config::CAR_INITIAL_POS_X, Config::CAR_INITIAL_POS_Y});
     mCar.setRotation(Config::CAR_INITIAL_ROTATION);
     mCar.resetVelocity();
-
-    /// Reset stats
     mDistance = 0.f;
     mLap = 0;
 }
-
-/// @brief Start race timer
-void Player::startClock() {
-    mClock.restart();
-}
-
-/// @brief Get player car
-/// @return Reference to car
-Car& Player::getCar() {
-    return mCar;
-}
-
-/// @brief Get distance traveled
-/// @return Distance in meters
-float Player::getDistance() const {
-    return mDistance;
-}
-
-/// @brief Get current lap
-/// @return Lap number
-int Player::getLap() const {
-    return mLap;
-}
-
-/// @brief Get elapsed race time
-/// @return Time since race start
-sf::Time Player::getElapsedTime() const {
-    return mClock.getElapsedTime();
-}
+void Player::startClock() { mClock.restart(); }
+Car& Player::getCar() { return mCar; }
+float Player::getDistance() const { return mDistance; }
+int Player::getLap() const { return mLap; }
+sf::Time Player::getElapsedTime() const { return mClock.getElapsedTime(); }
