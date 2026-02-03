@@ -5,13 +5,16 @@
 
 /// @brief Constructor
 Engine::Engine()
-    // Initialisation correcte de mIsFullscreen
+    // Initialisation en Plein Écran par défaut pour l'Arcade
     : mWindow(sf::VideoMode::getDesktopMode(), "RetroRush", sf::Style::Default, sf::State::Fullscreen),
       mCamera(sf::FloatRect({0.f, 0.f}, {Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT})),
       mTimePerFrame(sf::seconds(Config::TIME_PER_FRAME)),
       mIsFullscreen(true)
 {
-    mWindow.setFramerateLimit(static_cast<unsigned int>(Config::FPS));
+    // mWindow.setFramerateLimit(static_cast<unsigned int>(Config::FPS)); // Désactivé
+    mWindow.setVerticalSyncEnabled(true);
+
+    // Masquer le curseur pour l'immersion
     mWindow.setMouseCursorVisible(false);
 
     /// Load textures
@@ -41,6 +44,8 @@ Engine::Engine()
     mHud = std::make_unique<HUD>(font);
     mCameraManager = std::make_unique<Camera>(Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT);
     mGameManager = std::make_unique<GameManager>();
+
+    mCameraManager->update(mCamera, mWorld->getCar().getPosition(), mWorld->getTrackBounds().size);
 }
 
 /// @brief Run game loop
@@ -53,7 +58,7 @@ void Engine::run() {
         sf::Time deltaTime = clock.restart();
         timeSinceLastUpdate += deltaTime;
 
-        /// Update at fixed intervals
+        /// Update at fixed intervals (Physique stable)
         while (timeSinceLastUpdate > mTimePerFrame) {
             timeSinceLastUpdate -= mTimePerFrame;
             processEvents();
@@ -76,16 +81,20 @@ void Engine::processEvents() {
             if (keyEvent->code == sf::Keyboard::Key::Escape) {
                 mWindow.close();
             }
-            // Gestion F11
+            // GESTION F11 : Basculement Plein Écran / Fenêtré
             else if (keyEvent->code == sf::Keyboard::Key::F11) {
                 mIsFullscreen = !mIsFullscreen;
+
                 auto state = mIsFullscreen ? sf::State::Fullscreen : sf::State::Windowed;
                 mWindow.create(sf::VideoMode::getDesktopMode(), "RetroRush", sf::Style::Default, state);
-                mWindow.setFramerateLimit(static_cast<unsigned int>(Config::FPS));
+
+                // Important : Réappliquer les paramètres après recréation de la fenêtre
+                mWindow.setVerticalSyncEnabled(true);
                 mWindow.setMouseCursorVisible(!mIsFullscreen);
             }
         }
 
+        // GESTION MENU (Clavier / Manette)
         if (mGameManager->isInMenu() || mGameManager->isFinished()) {
             bool startRequested = false;
 
@@ -101,13 +110,18 @@ void Engine::processEvents() {
             }
 
             if (startRequested) {
+                // Si on relance après une fin de course, on sauvegarde le score
                 if (mGameManager->isFinished()) {
                     ScoreManager::saveTime(mGameManager->getRaceTime());
-                    mMenu->updateHighScores();
+                    mMenu->updateHighScores(); // Rafraîchir l'affichage des scores
                 }
+
                 mGameManager->reset();
                 mGameManager->startCountdown();
                 mWorld->reset();
+
+                // Recaler la caméra après le reset
+                mCameraManager->update(mCamera, mWorld->getCar().getPosition(), mWorld->getTrackBounds().size);
             }
         }
     }
@@ -136,7 +150,6 @@ void Engine::update(sf::Time deltaTime) {
             float raceTime = mGameManager->getRaceTime();
             mGameManager->markLapFinished(raceTime);
             mMenu->setResultText(mGameManager->getResultText());
-            // mMenu->setButtonText("Rejouer"); // SUPPRIMÉ: Cette méthode n'existe plus
 
             /// Update ghost and HUD with times
             mWorld->getGhost().submitTime(mWorld->getPlayer().getElapsedTime());

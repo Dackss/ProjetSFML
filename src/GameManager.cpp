@@ -35,25 +35,21 @@ void GameManager::update() {
 }
 
 /// @brief Check if in menu state
-/// @return True if in menu
 bool GameManager::isInMenu() const {
     return mState == State::Menu;
 }
 
 /// @brief Check if in countdown state
-/// @return True if in countdown
 bool GameManager::isCountdown() const {
     return mState == State::Countdown;
 }
 
 /// @brief Check if in playing state
-/// @return True if playing
 bool GameManager::isPlaying() const {
     return mState == State::Playing;
 }
 
 /// @brief Check if in finished state
-/// @return True if finished
 bool GameManager::isFinished() const {
     return mState == State::Finished;
 }
@@ -76,7 +72,6 @@ void GameManager::reset() {
 }
 
 /// @brief Get countdown value
-/// @return Current countdown value
 int GameManager::getCountdownValue() const {
     return mCountdownValue;
 }
@@ -84,17 +79,25 @@ int GameManager::getCountdownValue() const {
 /// @brief Get race time
 /// @return Time in seconds
 float GameManager::getRaceTime() const {
+    if (mState == State::Menu || mState == State::Countdown) {
+        return 0.0f;
+    }
+
+    // Si fini, on retourne le temps figé
+    if (mState == State::Finished) {
+        return mLastRaceTime;
+    }
+
+    // Sinon (En course), on retourne le chrono réel
     return mRaceClock.getElapsedTime().asSeconds();
 }
 
 /// @brief Get result text
-/// @return Result string
 std::string GameManager::getResultText() const {
     return mResultText;
 }
 
 /// @brief Check if race just started
-/// @return True if race started recently
 bool GameManager::justStartedRace() const {
     return mState == State::Playing && mRaceClock.getElapsedTime().asSeconds() < 0.05f;
 }

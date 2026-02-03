@@ -2,56 +2,46 @@
 #define CAR_H
 
 #include <SFML/Graphics.hpp>
-#include "Entity.h"
+#include <SFML/Audio.hpp>
 #include "CollisionMask.h"
+#include <memory> // Nécessaire pour std::unique_ptr
 
-/// @brief Car entity with physics and rendering
-class Car : public Entity {
+class Car {
 public:
-    /// @brief Constructor with texture
-    /// @param texture Sprite texture
     explicit Car(sf::Texture& texture);
 
-    /// @brief Update car physics and position
-    /// @param deltaTime Time since last update
-    /// @param trackBounds Circuit boundaries
-    /// @param mask Collision mask
     void update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const CollisionMask& mask);
 
-    /// @brief Render car to window
-    /// @param window Render target
-    void render(sf::RenderWindow& window) override;
+    // Rendu avec interpolation (alpha)
+    void render(sf::RenderWindow& window, float alpha = 1.0f);
 
-    /// @brief Get current position
-    /// @return Position vector
-    sf::Vector2f getPosition() const override;
+    sf::Vector2f getPosition() const;
+    sf::Vector2f getInterpolatedPosition(float alpha) const;
+    void setPosition(const sf::Vector2f& pos);
 
-    /// @brief Set new position
-    /// @param pos New position vector
-    void setPosition(const sf::Vector2f& pos) override;
-
-    /// @brief Get car sprite
-    /// @return Reference to sprite
     const sf::Sprite& getSprite() const;
-
-    /// @brief Reset velocity to zero
     void resetVelocity();
-
-    /// @brief Set rotation angle
-    /// @param angle Angle in degrees
     void setRotation(float angle);
-
-    /// @brief Get rotation angle
-    /// @return Angle in degrees
     float getRotation() const;
-
-    /// @brief Get current speed
-    /// @return Speed magnitude
     float getSpeed() const;
 
+    // Configuration audio différée
+    void setupAudio(const sf::SoundBuffer& buffer);
+
 private:
-    sf::Sprite mSprite;      ///< Car sprite
-    sf::Vector2f mVelocity;  ///< Velocity vector
+    // Helper pour l'interpolation d'angle
+    static float lerpAngle(float start, float end, float t);
+
+private:
+    sf::Sprite mSprite;
+    sf::Vector2f mVelocity;
+
+    // État précédent pour interpolation
+    sf::Vector2f mPreviousPosition;
+    float mPreviousRotation;
+
+    // SFML 3 : On utilise un pointeur pour pouvoir l'initialiser plus tard
+    std::unique_ptr<sf::Sound> mEngineSound;
 };
 
-#endif // CAR_H
+#endif
