@@ -1,6 +1,7 @@
 #include "Car.h"
 #include "Config.h"
 #include <SFML/Window/Keyboard.hpp>
+#include <SFML/Window/Joystick.hpp> // Ajout pour le support manette
 #include <cmath>
 
 /// @brief Constructor with texture
@@ -28,13 +29,23 @@ void Car::update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const Col
     /// Reduce rotation at low speed
     float turnFactor = std::min(speed / 20.f, 1.f);
 
-    /// Handle rotation input (Q/Left: left, D/Right: right)
+    // --- GESTION DES ENTRÉES (CLAVIER + MANETTE) ---
+
+    // Joystick 0 par défaut
+    unsigned int joystickId = 0;
+    float joyX = sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Axis::X);
+    bool joyLeft = joyX < -40.f; // Deadzone de 40%
+    bool joyRight = joyX > 40.f;
+
+    /// Handle rotation input (Q/Left: left, D/Right: right OR Joystick)
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Q) ||
-        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left)) {
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) ||
+        joyLeft) {
         mSprite.rotate(sf::degrees(-Config::CAR_MAX_TURN_RATE * dt * turnFactor));
     }
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) ||
-        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right)) {
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right) ||
+        joyRight) {
         mSprite.rotate(sf::degrees(Config::CAR_MAX_TURN_RATE * dt * turnFactor));
     }
 
@@ -47,15 +58,22 @@ void Car::update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const Col
     bool onGrass = mask.isOnGrass(mSprite.getPosition());
     float accel = onGrass ? Config::CAR_ACCELERATION * 0.4f : Config::CAR_ACCELERATION;
 
-    /// Handle acceleration (Z/Up: forward, S/Down: brake)
+    /// Handle acceleration (Z/Up: forward, S/Down: brake OR Buttons)
+    // Bouton 0 (A) pour accélérer, Bouton 1 (B) ou 2 (X) pour freiner
+    bool btnAccel = sf::Joystick::isButtonPressed(joystickId, 0);
+    bool btnBrake = sf::Joystick::isButtonPressed(joystickId, 1) || sf::Joystick::isButtonPressed(joystickId, 2);
+
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) ||
-        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up)) {
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) ||
+        btnAccel) {
         mVelocity += forward * accel * dt;
     }
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) ||
-        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down)) {
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) ||
+        btnBrake) {
         mVelocity -= forward * Config::CAR_BRAKING * dt;
     }
+    // ------------------------------------------------
 
     /// Update speed after acceleration
     speed = std::sqrt(mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y);
@@ -73,7 +91,8 @@ void Car::update(sf::Time deltaTime, const sf::FloatRect& trackBounds, const Col
     if (speed > 0.1f) {
         // Check input on both sets of keys for friction logic
         bool isAccelerating = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) ||
-                              sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up);
+                              sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) ||
+                              btnAccel;
 
         float friction = isAccelerating ? Config::CAR_FRICTION * 0.5f : Config::CAR_FRICTION;
         if (onGrass) {

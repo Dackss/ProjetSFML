@@ -1,13 +1,18 @@
 #include "Engine.h"
+#include "ScoreManager.h"
+#include <SFML/Window/Joystick.hpp>
 #include <stdexcept>
 
 /// @brief Constructor
 Engine::Engine()
-        : mWindow(sf::VideoMode(sf::Vector2u(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT)), "RetroRush"),
-          mCamera(sf::FloatRect(sf::Vector2f(0.f, 0.f), sf::Vector2f(Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT))),
-          mTimePerFrame(sf::seconds(Config::TIME_PER_FRAME)) {
-    /// Set frame rate limit
-    mWindow.setFramerateLimit(Config::FPS);
+    // Initialisation correcte de mIsFullscreen
+    : mWindow(sf::VideoMode::getDesktopMode(), "RetroRush", sf::Style::Default, sf::State::Fullscreen),
+      mCamera(sf::FloatRect({0.f, 0.f}, {Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT})),
+      mTimePerFrame(sf::seconds(Config::TIME_PER_FRAME)),
+      mIsFullscreen(true)
+{
+    mWindow.setFramerateLimit(static_cast<unsigned int>(Config::FPS));
+    mWindow.setMouseCursorVisible(false);
 
     /// Load textures
     std::string circuitPath = Config::TEXTURES_PATH + "circuit.png";
@@ -28,7 +33,11 @@ Engine::Engine()
 
     /// Initialize UI and managers
     sf::Font& font = mAssetsManager.getFont("arial");
-    mMenu = std::make_unique<Menu>(font);
+    sf::Texture& bgTexture = mAssetsManager.getTexture("circuit");
+
+    // Passage de la texture au menu
+    mMenu = std::make_unique<Menu>(font, bgTexture);
+
     mHud = std::make_unique<HUD>(font);
     mCameraManager = std::make_unique<Camera>(Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT);
     mGameManager = std::make_unique<GameManager>();
@@ -63,29 +72,39 @@ void Engine::processEvents() {
         if (event.is<sf::Event::Closed>()) {
             mWindow.close();
         }
-        // Gestion combinée Souris ET Clavier pour le menu
-        else if (mGameManager->isInMenu() || mGameManager->isFinished()) {
+        else if (const auto* keyEvent = event.getIf<sf::Event::KeyPressed>()) {
+            if (keyEvent->code == sf::Keyboard::Key::Escape) {
+                mWindow.close();
+            }
+            // Gestion F11
+            else if (keyEvent->code == sf::Keyboard::Key::F11) {
+                mIsFullscreen = !mIsFullscreen;
+                auto state = mIsFullscreen ? sf::State::Fullscreen : sf::State::Windowed;
+                mWindow.create(sf::VideoMode::getDesktopMode(), "RetroRush", sf::Style::Default, state);
+                mWindow.setFramerateLimit(static_cast<unsigned int>(Config::FPS));
+                mWindow.setMouseCursorVisible(!mIsFullscreen);
+            }
+        }
+
+        if (mGameManager->isInMenu() || mGameManager->isFinished()) {
             bool startRequested = false;
 
-            // 1. Clic Souris
-            if (const auto* mouseEvent = event.getIf<sf::Event::MouseButtonPressed>()) {
-                if (mouseEvent->button == sf::Mouse::Button::Left) {
-                    sf::Vector2f mousePos = mWindow.mapPixelToCoords(sf::Mouse::getPosition(mWindow));
-                    if (mMenu->isButtonClicked(mousePos)) {
-                        startRequested = true;
-                    }
+            if (const auto* keyEvent = event.getIf<sf::Event::KeyPressed>()) {
+                if (keyEvent->code == sf::Keyboard::Key::Enter || keyEvent->code == sf::Keyboard::Key::Space) {
+                    startRequested = true;
                 }
             }
-            // 2. Touche Clavier (Entrée ou Espace)
-            else if (const auto* keyEvent = event.getIf<sf::Event::KeyPressed>()) {
-                if (keyEvent->code == sf::Keyboard::Key::Enter ||
-                    keyEvent->code == sf::Keyboard::Key::Space) {
+            else if (const auto* joyEvent = event.getIf<sf::Event::JoystickButtonPressed>()) {
+                if (joyEvent->button == 0 || joyEvent->button == 7) {
                     startRequested = true;
-                    }
+                }
             }
 
-            // Lancer le jeu si demandé
             if (startRequested) {
+                if (mGameManager->isFinished()) {
+                    ScoreManager::saveTime(mGameManager->getRaceTime());
+                    mMenu->updateHighScores();
+                }
                 mGameManager->reset();
                 mGameManager->startCountdown();
                 mWorld->reset();
@@ -117,7 +136,7 @@ void Engine::update(sf::Time deltaTime) {
             float raceTime = mGameManager->getRaceTime();
             mGameManager->markLapFinished(raceTime);
             mMenu->setResultText(mGameManager->getResultText());
-            mMenu->setButtonText("Rejouer");
+            // mMenu->setButtonText("Rejouer"); // SUPPRIMÉ: Cette méthode n'existe plus
 
             /// Update ghost and HUD with times
             mWorld->getGhost().submitTime(mWorld->getPlayer().getElapsedTime());

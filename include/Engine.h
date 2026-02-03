@@ -1,15 +1,18 @@
 #ifndef ENGINE_H
 #define ENGINE_H
 
+#include <SFML/Graphics.hpp>
+#include <SFML/Window.hpp> // Nécessaire pour sf::State
+#include <memory>
 #include "World.h"
 #include "AssetsManager.h"
 #include "Menu.h"
 #include "Hud.h"
 #include "Camera.h"
-#include "Config.h"
 #include "GameManager.h"
+#include "Config.h"
 
-/// @brief Main game engine
+/// @brief Main game engine class
 class Engine {
 public:
     /// @brief Constructor
@@ -29,15 +32,18 @@ private:
     /// @brief Render game
     void render();
 
-    sf::RenderWindow mWindow;           ///< Main window
-    sf::View mCamera;                  ///< Camera view
-    sf::Time mTimePerFrame;            ///< Fixed time per frame
-    AssetsManager mAssetsManager;      ///< Resource manager
-    std::unique_ptr<World> mWorld;     ///< Game world
-    std::unique_ptr<Menu> mMenu;       ///< Menu UI
-    std::unique_ptr<HUD> mHud;         ///< HUD UI
-    std::unique_ptr<Camera> mCameraManager; ///< Camera controller
-    std::unique_ptr<GameManager> mGameManager; ///< Game state manager
+private:
+    sf::RenderWindow mWindow;
+    sf::View mCamera;
+    sf::Time mTimePerFrame;
+    AssetsManager mAssetsManager;
+    std::unique_ptr<World> mWorld;
+    std::unique_ptr<Menu> mMenu;
+    std::unique_ptr<HUD> mHud;
+    std::unique_ptr<Camera> mCameraManager;
+    std::unique_ptr<GameManager> mGameManager;
+
+    bool mIsFullscreen; // Ajouté pour gérer le basculement F11
 };
 
 #endif // ENGINE_H

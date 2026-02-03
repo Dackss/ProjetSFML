@@ -2,37 +2,32 @@
 #define MENU_H
 
 #include <SFML/Graphics.hpp>
+#include <vector>
 
-/// @brief Manages game menu
 class Menu {
 public:
-    /// @brief Constructor
-    /// @param font Text font
-    explicit Menu(const sf::Font& font);
+    // On ajoute la texture de fond au constructeur
+    Menu(const sf::Font& font, const sf::Texture& bgTexture);
 
-    /// @brief Render menu
-    /// @param window Render target
-    /// @param showResult Show result text
-    void render(sf::RenderWindow& window, bool showResult = false);
-
-    /// @brief Check if button is clicked
-    /// @param mousePos Mouse position
-    /// @return True if button clicked
-    bool isButtonClicked(sf::Vector2f mousePos) const;
-
-    /// @brief Set result text
-    /// @param result Result string
+    void render(sf::RenderWindow& window, bool showResult);
     void setResultText(const std::string& result);
 
-    /// @brief Set button text
-    /// @param text Button text
-    void setButtonText(const std::string& text);
+    // Met à jour l'affichage des scores
+    void updateHighScores();
 
 private:
-    sf::Text mTitleText;     ///< Title text
-    sf::Text mButtonText;    ///< Button text
-    sf::Text mResultText;    ///< Result text
-    sf::RectangleShape mButton; ///< Button shape
+    // CORRECTION : On déclare mFont en premier pour correspondre à l'ordre d'initialisation
+    const sf::Font& mFont;
+
+    sf::Sprite mBackground;
+    sf::Text mTitleText;
+    sf::Text mPressStartText;
+    sf::Text mResultText;
+
+    sf::Text mHighScoreTitle;
+    std::vector<sf::Text> mHighScoresList;
+
+    sf::Clock mBlinkClock;
 };
 
 #endif // MENU_H

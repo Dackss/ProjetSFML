@@ -1,95 +1,116 @@
 #include "Menu.h"
+#include "ScoreManager.h"
+#include <cmath>
+#include <iomanip>
+#include <sstream>
+#include <algorithm> // pour std::max
+#include <cstdint>   // pour std::uint8_t
 
 /// @brief Constructor
-/// @param font Text font
-Menu::Menu(const sf::Font& font)
-        : mTitleText(font), mButtonText(font), mResultText(font) {
-    /// Configure title text
-    mTitleText.setString("RetroRush");
-    mTitleText.setCharacterSize(60);
-    mTitleText.setFillColor(sf::Color::White);
-    mTitleText.setOutlineColor(sf::Color::Black);
-    mTitleText.setOutlineThickness(2.f);
+Menu::Menu(const sf::Font& font, const sf::Texture& bgTexture)
+        : mFont(font),
+          mBackground(bgTexture), // SFML 3: Sprite doit être init avec une texture
+          mTitleText(font),       // SFML 3: Text doit être init avec une font
+          mPressStartText(font),
+          mResultText(font),
+          mHighScoreTitle(font)
+{
+    // Configurer le fond (assombri pour lisibilité)
+    mBackground.setColor(sf::Color(100, 100, 100));
 
-    /// Configure button text
-    mButtonText.setString("Lancer");
-    mButtonText.setCharacterSize(30);
-    mButtonText.setFillColor(sf::Color::White);
-    mButtonText.setOutlineColor(sf::Color::Black);
-    mButtonText.setOutlineThickness(1.f);
+    // Titre Stylisé
+    mTitleText.setString("RETRO RUSH");
+    mTitleText.setCharacterSize(100);
+    mTitleText.setFillColor(sf::Color(255, 200, 0)); // Or
+    mTitleText.setOutlineColor(sf::Color::Red);
+    mTitleText.setOutlineThickness(5.f);
+    mTitleText.setStyle(sf::Text::Bold | sf::Text::Italic);
 
-    /// Configure result text
-    mResultText.setCharacterSize(40);
-    mResultText.setFillColor(sf::Color::White);
+    // Texte "Press Start" clignotant
+    mPressStartText.setString("PRESS START / ENTER");
+    mPressStartText.setCharacterSize(40);
+    mPressStartText.setFillColor(sf::Color::White);
+    mPressStartText.setOutlineColor(sf::Color::Black);
+    mPressStartText.setOutlineThickness(2.f);
+
+    // Titre des High Scores
+    mHighScoreTitle.setString("TOP RECORDS");
+    mHighScoreTitle.setCharacterSize(30);
+    mHighScoreTitle.setFillColor(sf::Color::Cyan);
+    mHighScoreTitle.setStyle(sf::Text::Underlined);
+
+    // Texte résultat (fin de course)
+    mResultText.setCharacterSize(50);
+    mResultText.setFillColor(sf::Color::Green);
     mResultText.setOutlineColor(sf::Color::Black);
-    mResultText.setOutlineThickness(1.f);
+    mResultText.setOutlineThickness(3.f);
 
-    /// Configure button
-    mButton.setSize({300.f, 80.f});
-    mButton.setFillColor(sf::Color(100, 100, 255));
+    updateHighScores();
 }
 
-/// @brief Render menu
-/// @param window Render target
-/// @param showResult Show result text
+void Menu::updateHighScores() {
+    mHighScoresList.clear();
+    std::vector<float> scores = ScoreManager::loadScores();
+
+    for (size_t i = 0; i < scores.size(); ++i) {
+        // SFML 3: Constructeur avec font obligatoire
+        sf::Text text(mFont);
+        text.setCharacterSize(25);
+        text.setFillColor(sf::Color::White);
+
+        std::stringstream ss;
+        ss << i + 1 << ". " << std::fixed << std::setprecision(2) << scores[i] << " s";
+        text.setString(ss.str());
+
+        mHighScoresList.push_back(text);
+    }
+}
+
 void Menu::render(sf::RenderWindow& window, bool showResult) {
     sf::Vector2u ws = window.getSize();
 
-    /// Draw background
-    sf::RectangleShape background(sf::Vector2f(float(ws.x), float(ws.y)));
-    background.setFillColor(sf::Color::Black);
-    window.draw(background);
+    // SFML 3: getTexture() retourne une référence (const Texture&), donc on utilise '.'
+    float scaleX = (float)ws.x / mBackground.getTexture().getSize().x;
+    float scaleY = (float)ws.y / mBackground.getTexture().getSize().y;
+    mBackground.setScale({std::max(scaleX, scaleY), std::max(scaleX, scaleY)});
+    window.draw(mBackground);
 
-    /// Update button color on hover
-    sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
-    mButton.setFillColor(mButton.getGlobalBounds().contains(mousePos) ? sf::Color(150, 150, 255) : sf::Color(100, 100, 255));
-
-    /// Position title text (center, 25% height)
+    // Centrer le titre
     sf::FloatRect tb = mTitleText.getLocalBounds();
     mTitleText.setOrigin(tb.position + tb.size / 2.f);
-    mTitleText.setPosition(sf::Vector2f(ws.x / 2.f, ws.y * 0.25f));
+    // SFML 3: setPosition attend un sf::Vector2f
+    mTitleText.setPosition({ws.x / 2.f, ws.y * 0.2f});
+    window.draw(mTitleText);
 
-    /// Position button (center, 50% height)
-    sf::Vector2f bs = mButton.getSize();
-    sf::Vector2f buttonPos((ws.x - bs.x) / 2.f, ws.y * 0.5f);
-    mButton.setPosition(buttonPos);
+    // Faire clignoter "Press Start"
+    float alpha = (std::sin(mBlinkClock.getElapsedTime().asSeconds() * 5.f) + 1.f) / 2.f; // 0 à 1
+    // SFML 3: sf::Uint8 n'existe plus, utiliser std::uint8_t
+    mPressStartText.setFillColor(sf::Color(255, 255, 255, static_cast<std::uint8_t>(alpha * 255)));
 
-    /// Position button text (center of button)
-    sf::FloatRect bb = mButtonText.getLocalBounds();
-    mButtonText.setOrigin(bb.position + bb.size / 2.f);
-    mButtonText.setPosition(mButton.getPosition() + bs / 2.f);
+    sf::FloatRect pb = mPressStartText.getLocalBounds();
+    mPressStartText.setOrigin(pb.position + pb.size / 2.f);
+    mPressStartText.setPosition({ws.x / 2.f, ws.y * 0.8f});
+    window.draw(mPressStartText);
 
-    /// Position result text (center, 35% height)
+    // Afficher les High Scores
+    // SFML 3: setPosition attend un sf::Vector2f
+    mHighScoreTitle.setPosition({ws.x * 0.1f, ws.y * 0.4f});
+    window.draw(mHighScoreTitle);
+
+    for (size_t i = 0; i < mHighScoresList.size(); ++i) {
+        mHighScoresList[i].setPosition({ws.x * 0.1f, ws.y * 0.45f + i * 35.f});
+        window.draw(mHighScoresList[i]);
+    }
+
+    // Afficher le résultat si nécessaire
     if (showResult) {
         sf::FloatRect rb = mResultText.getLocalBounds();
         mResultText.setOrigin(rb.position + rb.size / 2.f);
-        mResultText.setPosition(sf::Vector2f(ws.x / 2.f, ws.y * 0.35f));
-    }
-
-    /// Draw all elements
-    window.draw(mTitleText);
-    window.draw(mButton);
-    window.draw(mButtonText);
-    if (showResult) {
+        mResultText.setPosition({ws.x / 2.f, ws.y * 0.5f});
         window.draw(mResultText);
     }
 }
 
-/// @brief Check if button is clicked
-/// @param mousePos Mouse position
-/// @return True if button clicked
-bool Menu::isButtonClicked(sf::Vector2f mousePos) const {
-    return mButton.getGlobalBounds().contains(mousePos);
-}
-
-/// @brief Set result text
-/// @param result Result string
 void Menu::setResultText(const std::string& result) {
     mResultText.setString(result);
-}
-
-/// @brief Set button text
-/// @param text Button text
-void Menu::setButtonText(const std::string& text) {
-    mButtonText.setString(text);
 }

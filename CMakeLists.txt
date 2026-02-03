@@ -53,6 +53,7 @@ set(HEADERS
 		include/GameManager.h
 		include/GhostManager.h
 		src/GhostManager.cpp
+		include/ScoreManager.h
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
