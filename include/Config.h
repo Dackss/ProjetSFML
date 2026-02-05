@@ -9,6 +9,12 @@ namespace Config {
     inline const std::string TEXTURES_PATH = ASSETS_PATH + "textures/";
     inline const std::string FONTS_PATH = ASSETS_PATH + "fonts/";
 
+    inline const std::string FILE_CIRCUIT_HD = "circuit.png";
+    inline const std::string FILE_CIRCUIT_SD = "circuit_sd.png";
+
+    inline const std::string FILE_MASK_HD = "circuit_mask.png";
+    inline const std::string FILE_MASK_SD = "circuit_mask_sd.png";
+
     inline constexpr int WINDOW_WIDTH = 1280;
     inline constexpr int WINDOW_HEIGHT = 720;
 
@@ -29,6 +35,7 @@ namespace Config {
     inline constexpr float CAR_MAX_TURN_RATE = 90.0f;
     inline constexpr float CAR_FRICTION = 6.0f;
     inline constexpr float CAR_MAX_SPEED_GRASS = 25.0f;
+    inline constexpr unsigned int TEXTURE_LIMIT_THRESHOLD = 4096;
 
     /// @name Game Rules
     /// @{

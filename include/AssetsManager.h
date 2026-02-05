@@ -45,9 +45,13 @@ public:
      */
     sf::Font& getFont(const std::string& name);
 
+    void setUseSDAssets(bool value) { mUseSD = value; }
+    bool isUsingSDAssets() const { return mUseSD; }
+
 private:
     std::map<std::string, sf::Texture> mTextures; ///< Loaded textures
     std::map<std::string, sf::Font> mFonts;       ///< Loaded fonts
+    bool mUseSD = false;
 };
 
 #endif // ASSETSMANAGER_H

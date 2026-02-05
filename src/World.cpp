@@ -11,13 +11,18 @@ World::World(sf::RenderWindow& window, AssetsManager& assetsManager)
           mGhost(assetsManager),
           mLapCount(0) {
 
-    // Chargement du masque de collision
-    if (!mCollisionMask.loadFromFile(Config::TEXTURES_PATH + "circuit_mask.png")) {
-        throw std::runtime_error("Failed to load circuit_mask.png");
+    std::string maskFilename;
+    if (mAssetsManager.isUsingSDAssets()) {
+        maskFilename = Config::FILE_MASK_SD;
+    } else {
+        maskFilename = Config::FILE_MASK_HD;
     }
-
+    if (!mCollisionMask.loadFromFile(Config::TEXTURES_PATH + maskFilename)) {
+        throw std::runtime_error("Failed to load " + maskFilename);
+    }
     const sf::Texture& circuitTexture = mAssetsManager.getTexture("circuit");
     sf::Vector2u texSize = circuitTexture.getSize();
+    float scaleFactor = static_cast<float>(Config::WINDOW_WIDTH) / static_cast<float>(texSize.x);
 
     // Vérification de sécurité pour Raspberry Pi (Texture max size)
     unsigned int maxSize = sf::Texture::getMaximumSize();
@@ -25,9 +30,6 @@ World::World(sf::RenderWindow& window, AssetsManager& assetsManager)
         fprintf(stderr, "WARNING: Texture size (%u, %u) exceeds hardware limit (%u)!\n",
                 texSize.x, texSize.y, maxSize);
     }
-
-    // Calcul de l'échelle pour adapter la texture à la largeur logique du jeu
-    float scaleFactor = static_cast<float>(Config::WINDOW_WIDTH) / static_cast<float>(texSize.x);
 
     mTrack.setScale(scaleFactor);
     mCollisionMask.setScale(scaleFactor);

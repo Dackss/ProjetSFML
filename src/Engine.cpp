@@ -45,9 +45,25 @@ Engine::Engine()
     // Ajustement immédiat du ratio
     adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
 
+    unsigned int maxTextureSize = sf::Texture::getMaximumSize();
+    printf("GPU Max Texture Size: %u px\n", maxTextureSize);
+    std::string circuitFile;
+
+    if (maxTextureSize <= Config::TEXTURE_LIMIT_THRESHOLD) {
+        printf("Mode: Low/Medium Spec detected. Loading SD assets.\n");
+        circuitFile = Config::FILE_CIRCUIT_SD;
+        // On sauvegarde l'info que nous sommes en mode SD pour le masque plus tard
+        mAssetsManager.setUseSDAssets(true); // <--- Voir point 4
+    } else {
+        printf("Mode: High Spec detected. Loading HD assets.\n");
+        circuitFile = Config::FILE_CIRCUIT_HD;
+        mAssetsManager.setUseSDAssets(false);
+    }
+
     /// Load textures
-    std::string circuitPath = Config::TEXTURES_PATH + "circuit.png";
+    std::string circuitPath = Config::TEXTURES_PATH + circuitFile;
     std::string voiturePath = Config::TEXTURES_PATH + "voiture.png";
+
     if (!mAssetsManager.loadTexture("circuit", circuitPath) ||
         !mAssetsManager.loadTexture("voiture", voiturePath)) {
         throw std::runtime_error("Failed to load textures");
