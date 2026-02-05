@@ -61,21 +61,29 @@ void Car::update(sf::Time deltaTime, const CarControls& inputs, const sf::FloatR
     // On met à jour speedSq après l'accélération
     speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
 
+    bool hasInput = inputs.accelerate || inputs.brake;
+
     // Optimisation : On ne recalcul speed (sqrt) que si nécessaire pour normaliser
     // Seuil minimal pour éviter les divisions par zéro et l'instabilité à l'arrêt
-    if (speedSq > 0.1f) {
+    if (speedSq > 0.001f || hasInput) {
         // Friction
         float friction = inputs.accelerate ? Config::CAR_FRICTION * 0.5f : Config::CAR_FRICTION;
         if (onGrass) friction *= 0.6f;
 
         // Formule d'amortissement sans sqrt: V_new = V_old * (1 - friction * dt)
         // C'est une approximation valide pour dt petit et évite de normaliser le vecteur
-        float frictionFactor = 1.f - (friction / std::sqrt(speedSq)) * dt;
-        if (frictionFactor < 0.f) frictionFactor = 0.f; // Évite l'inversion de mouvement
-        mVelocity *= frictionFactor;
+        if (speedSq > 0.0001f) {
+            float speedVal = std::sqrt(speedSq);
+            float frictionFactor = 1.f - (friction / speedVal) * dt;
+
+            if (frictionFactor < 0.f) frictionFactor = 0.f;
+            mVelocity *= frictionFactor;
+        }
 
         // Recalcul après friction
         speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
+    } else {
+        mVelocity = {0.f, 0.f};
     }
 
     // Gestion Herbe & Max Speed
@@ -115,29 +123,42 @@ void Car::update(sf::Time deltaTime, const CarControls& inputs, const sf::FloatR
     // --- 7. MOUVEMENT & COLLISION ---
     sf::Vector2f nextPos = mSprite.getPosition() + mVelocity * dt;
 
-    // Clamp aux limites du circuit (Bounding Box)
-    // Utilisation de std::clamp (C++17) pour plus de propreté
-    // Attention: trackBounds.width/height vs size.x/size.y selon SFML version
-    sf::FloatRect bounds = mSprite.getGlobalBounds();
-    float halfW = bounds.size.x / 2.f;
-    float halfH = bounds.size.y / 2.f;
+    // CORRECTION ICI : On prend en compte le scale pour la taille réelle
+    float scale = mSprite.getScale().x;
+    float halfLength = (mSprite.getLocalBounds().size.x * scale) / 2.f;
 
-    nextPos.x = std::clamp(nextPos.x, trackBounds.position.x + halfW, trackBounds.position.x + trackBounds.size.x - halfW);
-    nextPos.y = std::clamp(nextPos.y, trackBounds.position.y + halfH, trackBounds.position.y + trackBounds.size.y - halfH);
+    // Calcul des points de collision (Avant et Arrière)
+    sf::Vector2f frontBumper = nextPos + forward * (halfLength * 0.9f);
+    sf::Vector2f rearBumper = nextPos - forward * (halfLength * 0.9f);
 
-    // Vérification Masque de Collision
-    if (mask.isTraversable(nextPos)) {
+    // Vérification des collisions
+    bool frontHit = !mask.isTraversable(frontBumper);
+    bool rearHit = !mask.isTraversable(rearBumper);
+    bool centerHit = !mask.isTraversable(nextPos);
+
+    // Logique de résolution :
+    bool collision = false;
+
+    // Si on avance et qu'on tape devant
+    float speedProj = mVelocity.x * forward.x + mVelocity.y * forward.y;
+
+    if (speedProj > 0 && frontHit) {
+        collision = true;
+    }
+    // Si on recule et qu'on tape derrière
+    else if (speedProj < 0 && rearHit) {
+        collision = true;
+    }
+    // Sécurité spawn
+    else if (centerHit) {
+        collision = true;
+    }
+
+    if (!collision) {
         mSprite.setPosition(nextPos);
     } else {
-        // COLLISION MUR DETECTÉE
-        // Option A (Simple) : On arrête tout (votre code actuel)
-        // mVelocity = {0.f, 0.f};
-
-        // Option B (Mieux) : On rebondit un peu et on perd de la vitesse
-        mVelocity = -mVelocity * 0.3f; // Rebond inversé à 30% de la vitesse
-
-        // On ne déplace PAS le sprite, il reste à mPreviousPosition (virtuellement)
-        // Cela empêche de traverser le mur
+        // Rebond amorti
+        mVelocity = -mVelocity * 0.3f;
     }
 }
 
