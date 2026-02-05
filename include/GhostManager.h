@@ -23,7 +23,7 @@ public:
     /// @brief Render ghost
     /// @param window Render target
     /// @param isPlaying True if game is in playing state
-    void render(sf::RenderWindow& window, bool isPlaying);
+    void render(sf::RenderWindow& window, bool isPlaying, float alpha = 1.0f);
 
     /// @brief Reset ghost data
     void reset();

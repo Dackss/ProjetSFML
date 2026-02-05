@@ -88,7 +88,7 @@ void World::render(bool isPlaying, float alpha) {
     }
 
     // 3. Rendu du Ghost
-    mGhost.render(mWindow, isPlaying);
+    mGhost.render(mWindow, isPlaying, alpha);
 
     // 4. Rendu du Joueur
     mPlayer.render(mWindow, alpha);
