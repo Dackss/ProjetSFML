@@ -214,6 +214,12 @@ void Engine::update(sf::Time deltaTime) {
         mWorld->getPlayer().startClock();
     }
 
+    if (mGameManager->isPlaying() && !mGameManager->isTimerRunning()) {
+        if (mWorld->isOnStartLine()) {
+            mGameManager->startTimer();
+        }
+    }
+
     if (mGameManager->isPlaying()) {
         mWorld->update(deltaTime, mCamera);
         mCameraManager->update(mCamera, mWorld->getCar().getPosition(), mWorld->getTrackBounds().size);

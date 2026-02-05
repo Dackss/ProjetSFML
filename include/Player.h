@@ -32,6 +32,8 @@ public:
     /// @return Reference to car
     Car& getCar();
 
+    const Car& getCar() const;
+
     /// @brief Get distance traveled
     /// @return Distance in meters
     float getDistance() const;

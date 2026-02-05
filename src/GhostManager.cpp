@@ -1,5 +1,6 @@
 #include "GhostManager.h"
 #include <algorithm>
+#include <fstream>
 
 static sf::Vector2f lerp(const sf::Vector2f& a, const sf::Vector2f& b, float t) {
     return a + (b - a) * t;
@@ -17,8 +18,10 @@ static float lerpAngle(float a, float b, float t) {
 /// @param assetsManager Resource manager
 GhostManager::GhostManager(AssetsManager& assetsManager)
         : mGhostSprite(assetsManager.getTexture("voiture")) {
-    /// Set sprite origin to center
     mGhostSprite.setOrigin(mGhostSprite.getLocalBounds().size / 2.f);
+
+    // Charger le fantôme s'il existe déjà sur le disque
+    loadGhostFromFile("best_ghost.dat");
 }
 
 /// @brief Reset ghost data
@@ -99,12 +102,8 @@ void GhostManager::render(sf::RenderWindow& window, bool isPlaying, float alpha)
 /// @return True if lap processed
 bool GhostManager::handleLapComplete() {
     if (mRecording) {
-        /// Ignore short runs
-        if (mNewGhostPositions.size() < 50) {
-            return false;
-        }
+        if (mNewGhostPositions.size() < 50) return false;
 
-        /// Compare new and old ghost times
         sf::Time newTime = sf::seconds(static_cast<float>(mNewGhostPositions.size()) / Config::FPS);
         sf::Time oldTime = sf::seconds(static_cast<float>(mGhostPositions.size()) / Config::FPS);
 
@@ -112,6 +111,8 @@ bool GhostManager::handleLapComplete() {
             mGhostPositions = mNewGhostPositions;
             mGhostRotations = mNewGhostRotations;
             mGhostEnabled = true;
+
+            saveGhostToFile("best_ghost.dat");
         }
 
         /// Clear temporary data
@@ -147,4 +148,42 @@ const std::vector<sf::Time>& GhostManager::getBestTimes() const {
 /// @param mask Collision mask reference
 void GhostManager::setCollisionMask(const CollisionMask* mask) {
     mCollisionMask = mask;
+}
+
+void GhostManager::saveGhostToFile(const std::string& filename) {
+    std::ofstream file(filename, std::ios::binary);
+    if (!file) return;
+
+    size_t size = mGhostPositions.size();
+    // 1. Sauvegarde la taille du vecteur
+    file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+
+    if (size > 0) {
+        // 2. Sauvegarde les positions
+        file.write(reinterpret_cast<const char*>(mGhostPositions.data()), size * sizeof(sf::Vector2f));
+        // 3. Sauvegarde les rotations
+        file.write(reinterpret_cast<const char*>(mGhostRotations.data()), size * sizeof(float));
+    }
+    file.close();
+}
+
+void GhostManager::loadGhostFromFile(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file) return;
+
+    size_t size;
+    // 1. Lit la taille
+    file.read(reinterpret_cast<char*>(&size), sizeof(size));
+
+    if (size > 0) {
+        mGhostPositions.resize(size);
+        mGhostRotations.resize(size);
+        // 2. Lit les positions
+        file.read(reinterpret_cast<char*>(mGhostPositions.data()), size * sizeof(sf::Vector2f));
+        // 3. Lit les rotations
+        file.read(reinterpret_cast<char*>(mGhostRotations.data()), size * sizeof(float));
+
+        mGhostEnabled = true; // Active le fantôme s'il y a des données
+    }
+    file.close();
 }

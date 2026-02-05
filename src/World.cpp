@@ -124,3 +124,7 @@ Player& World::getPlayer() { return mPlayer; }
 Car& World::getCar() { return mPlayer.getCar(); }
 int World::getLapCount() const { return mLapCount; }
 GhostManager& World::getGhost() { return mGhost; }
+
+bool World::isOnStartLine() const {
+    return mCollisionMask.isOnBlue(mPlayer.getCar().getPosition());
+}

@@ -3,7 +3,8 @@
 #include <string>
 
 GameManager::GameManager()
-    : mState(State::Menu), mCountdownValue(Config::COUNTDOWN_START_VALUE), mLastRaceTime(0.f) {}
+    : mState(State::Menu), mCountdownValue(Config::COUNTDOWN_START_VALUE),
+      mLastRaceTime(0.f), mTimerRunning(false) {}
 
 void GameManager::startCountdown() {
     mState = State::Countdown;
@@ -13,7 +14,13 @@ void GameManager::startCountdown() {
 
 void GameManager::startRace() {
     mState = State::Playing;
-    mRaceClock.restart();
+    mRaceClock.restart(); // On restart pour l'initialisation physique
+    mTimerRunning = false; // IMPORTANT : Le temps ne tourne pas encore
+}
+
+void GameManager::startTimer() {
+    mRaceClock.restart(); // On remet à zéro au moment précis du franchissement
+    mTimerRunning = true;
 }
 
 void GameManager::update() {
@@ -50,6 +57,7 @@ void GameManager::reset() {
     mCountdownValue = Config::COUNTDOWN_START_VALUE;
     mLastRaceTime = 0.f;
     mResultText.clear();
+    mTimerRunning = false; // Reset du flag
 }
 
 int GameManager::getCountdownValue() const { return mCountdownValue; }
@@ -57,6 +65,10 @@ int GameManager::getCountdownValue() const { return mCountdownValue; }
 float GameManager::getRaceTime() const {
     if (mState == State::Menu || mState == State::Countdown) return 0.0f;
     if (mState == State::Finished) return mLastRaceTime;
+
+    // Si le timer n'a pas démarré (mais qu'on joue), on retourne 0
+    if (!mTimerRunning) return 0.0f;
+
     return mRaceClock.getElapsedTime().asSeconds();
 }
 
@@ -64,4 +76,8 @@ std::string GameManager::getResultText() const { return mResultText; }
 
 bool GameManager::justStartedRace() const {
     return mState == State::Playing && mRaceClock.getElapsedTime().asSeconds() < 0.05f;
+}
+
+bool GameManager::isTimerRunning() const {
+    return mTimerRunning;
 }

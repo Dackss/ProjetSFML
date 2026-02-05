@@ -53,6 +53,8 @@ public:
     /// @return Reference to ghost manager
     GhostManager& getGhost();
 
+    bool isOnStartLine() const;
+
 private:
     sf::RenderWindow& mWindow;    ///< Render window
     AssetsManager& mAssetsManager;///< Resource manager

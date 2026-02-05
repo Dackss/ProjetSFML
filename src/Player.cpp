@@ -60,3 +60,6 @@ Car& Player::getCar() { return mCar; }
 float Player::getDistance() const { return mDistance; }
 int Player::getLap() const { return mLap; }
 sf::Time Player::getElapsedTime() const { return mClock.getElapsedTime(); }
+const Car& Player::getCar() const {
+    return mCar;
+}

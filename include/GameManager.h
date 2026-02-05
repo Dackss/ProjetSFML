@@ -15,6 +15,7 @@ public:
 
     /// @brief Start race phase
     void startRace();
+    void startTimer();
 
     /// @brief Update game state
     void update();
@@ -58,6 +59,8 @@ public:
     /// @return True if race started recently
     bool justStartedRace() const;
 
+    bool isTimerRunning() const;
+
 private:
     /// @brief Game state enumeration
     enum class State {
@@ -72,6 +75,7 @@ private:
     int mCountdownValue;       ///< Countdown value
     float mLastRaceTime;       ///< Last race time
     std::string mResultText;   ///< Result text
+    bool mTimerRunning;
 };
 
 #endif // GAMEMANAGER_H

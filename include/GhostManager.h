@@ -44,6 +44,9 @@ public:
     /// @param mask Collision mask reference
     void setCollisionMask(const CollisionMask* mask);
 
+    void saveGhostToFile(const std::string& filename);
+    void loadGhostFromFile(const std::string& filename);
+
 private:
     std::vector<sf::Vector2f> mGhostPositions;    ///< Ghost positions
     std::vector<float> mGhostRotations;           ///< Ghost rotations
@@ -58,6 +61,7 @@ private:
     sf::Sprite mGhostSprite;                      ///< Ghost sprite
     std::vector<sf::Time> mBestTimes;             ///< Best race times
     const CollisionMask* mCollisionMask;          ///< Collision mask
+    const std::string GHOST_FILE = "best_ghost.dat";
 };
 
 #endif // GHOSTMANAGER_H
