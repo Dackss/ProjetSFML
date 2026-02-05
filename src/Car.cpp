@@ -1,10 +1,10 @@
 #include "Car.h"
 #include "Config.h"
 #include <cmath>
-#include <algorithm> // pour std::min, std::max
+#include <algorithm>
 
 Car::Car(sf::Texture& texture)
-    : mSprite(texture), mVelocity(0.f, 0.f)
+    : mSprite(texture), mVelocity(0.f, 0.f), mCurrentSteer(0.f), mGrassIntensity(0.f)
 {
     mSprite.setPosition({Config::CAR_INITIAL_POS_X, Config::CAR_INITIAL_POS_Y});
     mSprite.setRotation(sf::degrees(Config::CAR_INITIAL_ROTATION));
@@ -13,7 +13,6 @@ Car::Car(sf::Texture& texture)
     sf::Vector2u textureSize = texture.getSize();
     mSprite.setOrigin({textureSize.x / 2.f, textureSize.y / 2.f});
 
-    // Init previous state
     mPreviousPosition = mSprite.getPosition();
     mPreviousRotation = mSprite.getRotation().asDegrees();
 }
@@ -25,159 +24,229 @@ void Car::setupAudio(const sf::SoundBuffer& buffer) {
     mEngineSound->play();
 }
 
+// -----------------------------------------------------------------------
+// Méthode UPDATE optimisée et découpée
+// -----------------------------------------------------------------------
 void Car::update(sf::Time deltaTime, const CarControls& inputs, const sf::FloatRect& trackBounds, const CollisionMask& mask) {
-    // 1. Sauvegarde pour interpolation (Toujours au début)
+    // 1. Sauvegarde état précédent pour interpolation
     mPreviousPosition = mSprite.getPosition();
     mPreviousRotation = mSprite.getRotation().asDegrees();
 
     float dt = deltaTime.asSeconds();
 
-    // --- 2. INPUTS ROTATION ---
-    // On calcule la vitesse au carré pour éviter un sqrt immédiat
+    // Calculs préliminaires (cache)
+    // On calcule la vitesse une fois ici, elle sera mise à jour implicitement par la physique,
+    // mais pour le steering, la vitesse du début de frame suffit souvent.
     float speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
+    float currentSpeed = std::sqrt(speedSq);
 
-    // Facteur de rotation basé sur une approximation (évite sqrt ici si possible, sinon on le fait une fois)
-    // Astuce : Pour turnFactor, on a besoin de la vitesse réelle (magnitude)
-    float speed = std::sqrt(speedSq);
+    // Vérification du terrain une seule fois pour cette frame
+    bool onGrass = mask.isOnGrass(mSprite.getPosition());
 
-    float turnFactor = std::min(speed / 20.f, 1.f);
-    float rotationAmount = Config::CAR_MAX_TURN_RATE * dt * turnFactor;
+    // 2. Gestion de la direction (Rotation)
+    processSteering(dt, inputs, currentSpeed);
 
-    if (inputs.turnLeft)  mSprite.rotate(sf::degrees(-rotationAmount));
-    if (inputs.turnRight) mSprite.rotate(sf::degrees(rotationAmount));
-
-    // Vecteur direction (Forward)
+    // Recalcul du vecteur Forward après rotation
     float angleRad = mSprite.getRotation().asRadians();
     sf::Vector2f forward(std::cos(angleRad), std::sin(angleRad));
 
-    // --- 3. ACCELERATION ---
-    bool onGrass = mask.isOnGrass(mSprite.getPosition());
-    float accel = onGrass ? Config::CAR_ACCELERATION * 0.4f : Config::CAR_ACCELERATION;
+    // 3. Gestion Accélération, Friction et Vitesse Max
+    processPhysics(dt, inputs, forward, onGrass);
 
-    if (inputs.accelerate) mVelocity += forward * accel * dt;
-    if (inputs.brake)      mVelocity -= forward * Config::CAR_BRAKING * dt;
-
-    // --- 4. PHYSIQUE (Friction & Limites) ---
-    // On met à jour speedSq après l'accélération
+    // Recalcul de la vitesse réelle après accélération/friction pour le drift et l'audio
     speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
+    currentSpeed = std::sqrt(speedSq);
 
-    bool hasInput = inputs.accelerate || inputs.brake;
+    // 4. Gestion du Drift (Dérapage)
+    applyDrift(forward, currentSpeed);
 
-    // Optimisation : On ne recalcul speed (sqrt) que si nécessaire pour normaliser
-    // Seuil minimal pour éviter les divisions par zéro et l'instabilité à l'arrêt
-    if (speedSq > 0.001f || hasInput) {
-        // Friction
-        float friction = inputs.accelerate ? Config::CAR_FRICTION * 0.5f : Config::CAR_FRICTION;
-        if (onGrass) friction *= 0.6f;
+    // 5. Mise à jour de l'audio
+    updateAudioPitch(currentSpeed);
 
-        // Formule d'amortissement sans sqrt: V_new = V_old * (1 - friction * dt)
-        // C'est une approximation valide pour dt petit et évite de normaliser le vecteur
-        if (speedSq > 0.0001f) {
-            float speedVal = std::sqrt(speedSq);
-            float frictionFactor = 1.f - (friction / speedVal) * dt;
+    // 6. Mouvement final et résolution des collisions
+    resolveCollisions(dt, forward, mask);
+}
 
-            if (frictionFactor < 0.f) frictionFactor = 0.f;
-            mVelocity *= frictionFactor;
+// -----------------------------------------------------------------------
+// Sous-méthodes d'implémentation
+// -----------------------------------------------------------------------
+
+void Car::processSteering(float dt, const CarControls& inputs, float currentSpeed) {
+    // 1. Détermination de la cible de direction (-1 = Gauche, 1 = Droite, 0 = Tout droit)
+    float targetSteer = 0.f;
+    if (inputs.turnLeft)  targetSteer = -1.f;
+    if (inputs.turnRight) targetSteer = 1.f;
+
+    // 2. Interpolation vers la cible (Braquage progressif)
+    // Vitesse de braquage : 5.0f signifie qu'il faut 0.2 seconde pour braquer à fond
+    float steerSpeed = 5.0f * dt;
+
+    if (mCurrentSteer < targetSteer) {
+        mCurrentSteer = std::min(mCurrentSteer + steerSpeed, targetSteer);
+    } else if (mCurrentSteer > targetSteer) {
+        mCurrentSteer = std::max(mCurrentSteer - steerSpeed, targetSteer);
+    }
+
+    // 3. Application de la rotation
+    // Le taux de rotation dépend maintenant de l'angle de braquage réel (mCurrentSteer)
+    if (std::abs(mCurrentSteer) > 0.01f) {
+        float turnFactor = std::min(currentSpeed / 20.f, 1.f);
+
+        // On multiplie par mCurrentSteer pour avoir la direction et l'intensité
+        float rotationAmount = Config::CAR_MAX_TURN_RATE * dt * turnFactor * mCurrentSteer;
+
+        mSprite.rotate(sf::degrees(rotationAmount));
+    }
+}
+
+void Car::processPhysics(float dt, const CarControls& inputs, const sf::Vector2f& forward, bool onGrass) {
+    float currentForwardSpeed = mVelocity.x * forward.x + mVelocity.y * forward.y;
+    float speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
+    float currentSpeed = std::sqrt(speedSq);
+    float steerIntensity = std::abs(mCurrentSteer);
+
+    // Calcul du facteur exponentiel (carré) pour la progressivité
+    float steerFactor = steerIntensity * steerIntensity;
+
+    // --- GESTION PROGRESSIVE DE L'HERBE ---
+    if (onGrass) {
+        mGrassIntensity = std::min(mGrassIntensity + dt * 1.0f, 1.0f);
+    } else {
+        mGrassIntensity = std::max(mGrassIntensity - dt * 2.0f, 0.0f);
+    }
+
+    // --- ACCÉLÉRATION ---
+    float grassAccelFactor = 1.0f - (0.4f * mGrassIntensity);
+    float accel = Config::CAR_ACCELERATION * grassAccelFactor;
+
+    if (inputs.accelerate) {
+        // Application de la courbe exponentielle aussi sur la perte d'accélération
+        // Pour que ce soit cohérent : on perd peu de puissance au début, et 20% à la fin.
+        accel *= (1.0f - (0.20f * steerFactor));
+
+        mVelocity += forward * accel * dt;
+    }
+
+    // --- FREINAGE ---
+    if (inputs.brake) {
+        if (currentForwardSpeed > 1.0f) {
+             mVelocity -= forward * (Config::CAR_BRAKING * 1.7f) * dt;
+        } else {
+            float maxReverseSpeed = Config::CAR_MAX_SPEED * 0.25f;
+            if (currentForwardSpeed > -maxReverseSpeed) {
+                mVelocity -= forward * (Config::CAR_ACCELERATION * 0.8f) * dt;
+            }
+        }
+    }
+
+    // --- FRICTION & RÉSISTANCE ---
+    if (speedSq > 0.001f) {
+        float friction = Config::CAR_FRICTION;
+
+        // Herbe progressive
+        float grassFrictionMod = 1.0f + (1.2f * mGrassIntensity);
+        friction *= grassFrictionMod;
+
+        // Frein moteur
+        if (!inputs.accelerate && !inputs.brake) friction *= 1.2f;
+
+        // --- TIRE SCRUBBING (EXPONENTIEL) ---
+        // On utilise 'steerFactor' (le carré de l'intensité)
+        // Cela permet un début de virage très glissant (peu de frein)
+        // et un freinage plus marqué seulement si on insiste sur le volant.
+        // On garde le coefficient 0.17f pour l'intensité finale.
+        if (steerIntensity > 0.01f) {
+             friction += currentSpeed * 0.17f * steerFactor;
         }
 
-        // Recalcul après friction
-        speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
-    } else {
-        mVelocity = {0.f, 0.f};
+        float frictionFactor = 1.f - (friction / currentSpeed) * dt;
+        if (frictionFactor < 0.f) frictionFactor = 0.f;
+
+        mVelocity *= frictionFactor;
     }
 
-    // Gestion Herbe & Max Speed
-    float maxSpeed = onGrass ? Config::CAR_MAX_SPEED_GRASS : Config::CAR_MAX_SPEED;
-    float maxSpeedSq = maxSpeed * maxSpeed;
+    // --- VITESSE MAX ---
+    float maxSpeedNormal = Config::CAR_MAX_SPEED;
+    float maxSpeedGrass = Config::CAR_MAX_SPEED_GRASS;
 
-    if (speedSq > maxSpeedSq) {
-        // Normalisation (Coûteux mais nécessaire ici)
-        float currentSpeed = std::sqrt(speedSq);
-        mVelocity = (mVelocity / currentSpeed) * maxSpeed;
-        speedSq = maxSpeedSq; // La vitesse est maintenant capée
+    float currentMaxSpeed = maxSpeedNormal - (maxSpeedNormal - maxSpeedGrass) * mGrassIntensity;
+
+    speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
+    if (speedSq > currentMaxSpeed * currentMaxSpeed) {
+        float k = currentMaxSpeed / std::sqrt(speedSq);
+        mVelocity *= k;
     }
+}
 
-    // --- 5. DRIFT (Dérapage) ---
-    // On a besoin de la vitesse réelle finale pour le drift
-    speed = std::sqrt(speedSq); // Mise à jour finale de speed pour le drift et l'audio
-
+void Car::applyDrift(const sf::Vector2f& forward, float currentSpeed) {
+    // Décomposition de la vitesse
     float forwardSpeed = mVelocity.x * forward.x + mVelocity.y * forward.y;
-    sf::Vector2f lateral = mVelocity - forward * forwardSpeed;
+    sf::Vector2f forwardVelocity = forward * forwardSpeed;
+    sf::Vector2f lateralVelocity = mVelocity - forwardVelocity;
+    float gripFactor = 0.05f;
 
-    // Plus on va vite, moins on drift (adhérence) ? Ou l'inverse ?
-    // Votre formule: 0.7 - (speed/100). Si speed=0, drift=0.7 (bcp de glisse latérale).
-    // Si speed=100, drift=0.3 (peu de glisse). C'est un peu contre-intuitif (souvent on glisse plus à haute vitesse)
-    // Mais gardons votre logique pour ne pas casser le gameplay.
-    float driftFactor = 0.7f - std::min(speed / 100.f, 0.4f);
-    mVelocity = forward * forwardSpeed + lateral * driftFactor;
+    mVelocity = forwardVelocity + lateralVelocity * gripFactor;
+}
 
-    // --- 6. AUDIO ---
+void Car::updateAudioPitch(float currentSpeed) {
     if (mEngineSound) {
-        float targetPitch = (speed < 10.f) ? 0.8f : (0.8f + (speed / Config::CAR_MAX_SPEED) * 1.7f);
+        float targetPitch = (currentSpeed < 10.f) ? 0.8f : (0.8f + (currentSpeed / Config::CAR_MAX_SPEED) * 1.7f);
+
+        // Lissage du pitch pour éviter les changements brusques
         if (std::abs(mLastPitch - targetPitch) > 0.05f) {
             mEngineSound->setPitch(targetPitch);
             mLastPitch = targetPitch;
         }
     }
+}
 
-    // --- 7. MOUVEMENT & COLLISION ---
+void Car::resolveCollisions(float dt, const sf::Vector2f& forward, const CollisionMask& mask) {
     sf::Vector2f nextPos = mSprite.getPosition() + mVelocity * dt;
 
-    // CORRECTION ICI : On prend en compte le scale pour la taille réelle
+    // Calcul des bounds pour les collisions
     float scale = mSprite.getScale().x;
     float halfLength = (mSprite.getLocalBounds().size.x * scale) / 2.f;
 
-    // Calcul des points de collision (Avant et Arrière)
+    // Points de collision
     sf::Vector2f frontBumper = nextPos + forward * (halfLength * 0.9f);
     sf::Vector2f rearBumper = nextPos - forward * (halfLength * 0.9f);
 
-    // Vérification des collisions
+    // Tests de collision via le masque
     bool frontHit = !mask.isTraversable(frontBumper);
     bool rearHit = !mask.isTraversable(rearBumper);
     bool centerHit = !mask.isTraversable(nextPos);
 
-    // Logique de résolution :
     bool collision = false;
-
-    // Si on avance et qu'on tape devant
     float speedProj = mVelocity.x * forward.x + mVelocity.y * forward.y;
 
-    if (speedProj > 0 && frontHit) {
-        collision = true;
-    }
-    // Si on recule et qu'on tape derrière
-    else if (speedProj < 0 && rearHit) {
-        collision = true;
-    }
-    // Sécurité spawn
-    else if (centerHit) {
-        collision = true;
-    }
+    if (speedProj > 0 && frontHit) collision = true;
+    else if (speedProj < 0 && rearHit) collision = true;
+    else if (centerHit) collision = true;
 
     if (!collision) {
         mSprite.setPosition(nextPos);
     } else {
-        // Rebond amorti
+        // Rebond simple
         mVelocity = -mVelocity * 0.3f;
     }
 }
 
-// C'est cette méthode qui manquait !
+// -----------------------------------------------------------------------
+// Méthodes utilitaires et accesseurs existants
+// -----------------------------------------------------------------------
+
 void Car::render(sf::RenderWindow& window, float alpha) {
-    // Calculs d'interpolation
     sf::Vector2f currentPos = mSprite.getPosition();
     sf::Vector2f interpPos = mPreviousPosition * (1.f - alpha) + currentPos * alpha;
 
     float currentRot = mSprite.getRotation().asDegrees();
     float interpRot = lerpAngle(mPreviousRotation, currentRot, alpha);
 
-    // Rendu
     mSprite.setPosition(interpPos);
     mSprite.setRotation(sf::degrees(interpRot));
 
     window.draw(mSprite);
 
-    // Restauration pour la physique
     mSprite.setPosition(currentPos);
     mSprite.setRotation(sf::degrees(currentRot));
 }

@@ -30,7 +30,9 @@ namespace Config {
     inline constexpr float CAR_INITIAL_POS_Y = 458.342f;
     inline constexpr float CAR_INITIAL_ROTATION = 145.0f;
     inline constexpr float CAR_MAX_SPEED = 80.0f;
-    inline constexpr float CAR_ACCELERATION = 15.0f;
+
+    // --- MODIFICATIONS ICI ---
+    inline constexpr float CAR_ACCELERATION = 20.0f; // Augmenté de 15.0 à 30.0 pour plus de patate
     inline constexpr float CAR_BRAKING = 30.0f;
     inline constexpr float CAR_MAX_TURN_RATE = 90.0f;
     inline constexpr float CAR_FRICTION = 6.0f;

@@ -6,7 +6,6 @@
 #include "CollisionMask.h"
 #include <memory>
 
-/// @brief Structure regroupant les commandes de pilotage
 struct CarControls {
     bool accelerate = false;
     bool brake = false;
@@ -18,9 +17,7 @@ class Car {
 public:
     explicit Car(sf::Texture& texture);
 
-    // Signature modifiée : on passe les inputs ici
     void update(sf::Time deltaTime, const CarControls& inputs, const sf::FloatRect& trackBounds, const CollisionMask& mask);
-
     void render(sf::RenderWindow& window, float alpha = 1.0f);
 
     sf::Vector2f getPosition() const;
@@ -38,6 +35,13 @@ public:
 private:
     static float lerpAngle(float start, float end, float t);
 
+    // --- Nouvelles méthodes internes pour découper update() ---
+    void processSteering(float dt, const CarControls& inputs, float currentSpeed);
+    void processPhysics(float dt, const CarControls& inputs, const sf::Vector2f& forwardVector, bool onGrass);
+    void applyDrift(const sf::Vector2f& forwardVector, float currentSpeed);
+    void resolveCollisions(float dt, const sf::Vector2f& forwardVector, const CollisionMask& mask);
+    void updateAudioPitch(float currentSpeed);
+
 private:
     sf::Sprite mSprite;
     sf::Vector2f mVelocity;
@@ -47,6 +51,9 @@ private:
 
     std::unique_ptr<sf::Sound> mEngineSound;
     float mLastPitch = 1.0f;
+
+    float mCurrentSteer = 0.0f;
+    float mGrassIntensity = 0.0f;
 };
 
 #endif
