@@ -9,27 +9,40 @@ static void adjustView(const sf::Vector2u& windowSize, sf::View& view, float tar
     float windowRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
 
     if (windowRatio > targetRatio) {
-        // Fenêtre plus large que le jeu (Bandes noires sur les côtés)
+        // Fenêtre plus large que le jeu
         float scaleFactor = targetRatio / windowRatio;
         view.setViewport(sf::FloatRect({(1.f - scaleFactor) / 2.f, 0.f}, {scaleFactor, 1.f}));
     } else {
-        // Fenêtre plus haute que le jeu (Bandes noires en haut/bas)
+        // Fenêtre plus haute que le jeu
         float scaleFactor = windowRatio / targetRatio;
         view.setViewport(sf::FloatRect({0.f, (1.f - scaleFactor) / 2.f}, {1.f, scaleFactor}));
     }
 }
 
 Engine::Engine()
-    // On utilise getDesktopMode() qui cible l'écran principal par défaut
-    : mWindow(sf::VideoMode::getDesktopMode(), "RetroRush", sf::Style::Default, sf::State::Fullscreen),
-      mCamera(sf::FloatRect({0.f, 0.f}, {Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT})),
+    // CORRECTION ICI : L'ordre doit suivre celui de Engine.h (Resources -> State)
+    : mCamera(sf::FloatRect({0.f, 0.f}, {Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT})),
       mTimePerFrame(sf::seconds(Config::TIME_PER_FRAME)),
-      mIsFullscreen(true)
+      mIsFullscreen(true),
+      mHasFocus(true)
 {
+    // Configuration de l'anti-aliasing (SFML 3 : antiAliasingLevel avec un grand 'A')
+    mContextSettings.antiAliasingLevel = 8;
+
+    // Création de la fenêtre (SFML 3 : create prend VideoMode, Titre, Style, State, Settings)
+    // Pour le fullscreen, le style est ignoré ou mis à Default, et l'état est State::Fullscreen
+    mWindow.create(
+        sf::VideoMode::getDesktopMode(),
+        "RetroRush",
+        sf::Style::Default,
+        sf::State::Fullscreen,
+        mContextSettings
+    );
+
     mWindow.setVerticalSyncEnabled(true);
     mWindow.setMouseCursorVisible(false);
 
-    // Ajustement immédiat du ratio pour l'écran actuel
+    // Ajustement immédiat du ratio
     adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
 
     /// Load textures
@@ -71,12 +84,51 @@ void Engine::run() {
         while (timeSinceLastUpdate > mTimePerFrame) {
             timeSinceLastUpdate -= mTimePerFrame;
             processEvents();
-            update(mTimePerFrame);
+            if (mHasFocus) {
+                update(mTimePerFrame);
+            }
         }
         float alpha = timeSinceLastUpdate.asSeconds() / mTimePerFrame.asSeconds();
 
         render(alpha);
     }
+}
+
+void Engine::toggleFullscreen() {
+    mIsFullscreen = !mIsFullscreen;
+
+    sf::VideoMode mode;
+    sf::State state;
+    std::uint32_t style;
+
+    if (mIsFullscreen) {
+        mode = sf::VideoMode::getDesktopMode();
+        state = sf::State::Fullscreen;
+        style = sf::Style::Default;
+    } else {
+        // SFML 3 : VideoMode prend un Vector2u ({w, h})
+        mode = sf::VideoMode({static_cast<unsigned int>(Config::WINDOW_WIDTH), static_cast<unsigned int>(Config::WINDOW_HEIGHT)});
+        state = sf::State::Windowed;
+        style = sf::Style::Default;
+    }
+
+    // Re-création avec la signature SFML 3
+    mWindow.create(mode, "RetroRush", style, state, mContextSettings);
+
+    mWindow.setVerticalSyncEnabled(true);
+    mWindow.setMouseCursorVisible(!mIsFullscreen);
+
+    if (!mIsFullscreen) {
+        auto desktop = sf::VideoMode::getDesktopMode();
+        // SFML 3 : VideoMode.size.x au lieu de .width
+        sf::Vector2i position(
+            (desktop.size.x - mode.size.x) / 2,
+            (desktop.size.y - mode.size.y) / 2
+        );
+        mWindow.setPosition(position);
+    }
+
+    adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
 }
 
 void Engine::processEvents() {
@@ -87,31 +139,25 @@ void Engine::processEvents() {
             mWindow.close();
         }
         else if (const auto* resizeEvent = event.getIf<sf::Event::Resized>()) {
-            // Gestion du redimensionnement (garde le ratio)
             adjustView(resizeEvent->size, mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
+        }
+        // SFML 3 : FocusLost / FocusGained (inversion des termes par rapport à v2)
+        else if (event.is<sf::Event::FocusLost>()) {
+            mHasFocus = false;
+        }
+        else if (event.is<sf::Event::FocusGained>()) {
+            mHasFocus = true;
         }
         else if (const auto* keyEvent = event.getIf<sf::Event::KeyPressed>()) {
             if (keyEvent->code == sf::Keyboard::Key::Escape) {
                 mWindow.close();
             }
-            // GESTION F11 : Basculement Plein Écran / Fenêtré
             else if (keyEvent->code == sf::Keyboard::Key::F11) {
-                mIsFullscreen = !mIsFullscreen;
-
-                auto state = mIsFullscreen ? sf::State::Fullscreen : sf::State::Windowed;
-                // Si on passe en fenêtré, on met une taille standard, sinon DesktopMode
-                sf::VideoMode mode = mIsFullscreen ? sf::VideoMode::getDesktopMode() : sf::VideoMode({1280, 720});
-
-                mWindow.create(mode, "RetroRush", sf::Style::Default, state);
-
-                // Réappliquer les paramètres
-                mWindow.setVerticalSyncEnabled(true);
-                mWindow.setMouseCursorVisible(!mIsFullscreen);
-
-                // Réajuster la vue après recréation
-                adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
+                toggleFullscreen();
             }
         }
+
+        if (!mHasFocus) return;
 
         // GESTION MENU
         if (mGameManager->isInMenu() || mGameManager->isFinished()) {
@@ -172,7 +218,7 @@ void Engine::update(sf::Time deltaTime) {
 }
 
 void Engine::render(float alpha) {
-    mWindow.clear(sf::Color(20, 20, 20)); // Fond légèrement gris pour les bandes noires
+    mWindow.clear(sf::Color(20, 20, 20));
 
     if (mGameManager->isInMenu() || mGameManager->isFinished()) {
         mWindow.setView(mWindow.getDefaultView());
@@ -183,7 +229,6 @@ void Engine::render(float alpha) {
             mCameraManager->update(mCamera, interpolatedCarPos, mWorld->getTrackBounds().size);
         }
 
-        // On applique la caméra avec le viewport ajusté (Letterbox)
         mWindow.setView(mCamera);
         mWorld->render(mGameManager->isPlaying(), alpha);
 

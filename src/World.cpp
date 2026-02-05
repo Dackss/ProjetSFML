@@ -1,13 +1,8 @@
 #include "World.h"
 #include "Config.h"
 #include <stdexcept>
-
-/// @brief Constructor
-/// @param window Render window
-/// @param assetsManager Resource manager
-#include "World.h"
-#include "Config.h"
-#include <stdexcept>
+#include <algorithm> // Pour std::clamp, std::max, std::min
+#include <cmath>     // Pour std::abs si nécessaire
 
 World::World(sf::RenderWindow& window, AssetsManager& assetsManager)
         : mWindow(window), mAssetsManager(assetsManager),
@@ -16,119 +11,106 @@ World::World(sf::RenderWindow& window, AssetsManager& assetsManager)
           mGhost(assetsManager),
           mLapCount(0) {
 
-    // Chargement du masque
+    // Chargement du masque de collision
     if (!mCollisionMask.loadFromFile(Config::TEXTURES_PATH + "circuit_mask.png")) {
         throw std::runtime_error("Failed to load circuit_mask.png");
     }
 
-    // --- CORRECTION MAJEURE ICI ---
-    // On calcule l'échelle pour que le circuit ait TOUJOURS la taille prévue dans Config.h
-    // Peu importe si l'image est 4K ou HD, elle sera redimensionnée pour faire 'WINDOW_WIDTH' pixels de large.
-    sf::Vector2u texSize = mAssetsManager.getTexture("circuit").getSize();
+    const sf::Texture& circuitTexture = mAssetsManager.getTexture("circuit");
+    sf::Vector2u texSize = circuitTexture.getSize();
 
-    // On utilise Config::WINDOW_WIDTH pour garantir que la voiture (placée selon Config) soit sur la route
+    // Vérification de sécurité pour Raspberry Pi (Texture max size)
+    unsigned int maxSize = sf::Texture::getMaximumSize();
+    if (texSize.x > maxSize || texSize.y > maxSize) {
+        fprintf(stderr, "WARNING: Texture size (%u, %u) exceeds hardware limit (%u)!\n",
+                texSize.x, texSize.y, maxSize);
+    }
+
+    // Calcul de l'échelle pour adapter la texture à la largeur logique du jeu
     float scaleFactor = static_cast<float>(Config::WINDOW_WIDTH) / static_cast<float>(texSize.x);
 
-    // On applique cette échelle partout
     mTrack.setScale(scaleFactor);
     mCollisionMask.setScale(scaleFactor);
 
-    // On stocke la taille réelle du monde pour la caméra
+    // Taille réelle du monde
     mTrackSize = sf::Vector2f(texSize.x * scaleFactor, texSize.y * scaleFactor);
 
+    // Injection des dépendances
     mCheckpoints.setCollisionMask(&mCollisionMask);
     mGhost.setCollisionMask(&mCollisionMask);
 }
 
-/// @brief Update world state
-/// @param deltaTime Time since last update
-/// @param camera Camera view
-/// @see https://www.sfml-dev.org/documentation/3.0.0/classsf_1_1View.php#a24d0503c14555f9d4f5374ad80968023
 void World::update(sf::Time deltaTime, sf::View& camera) {
     mPlayer.update(deltaTime, getTrackBounds(), mCollisionMask);
     mCheckpoints.update(mPlayer.getCar().getPosition());
     mGhost.update(mPlayer.getCar(), mCheckpoints);
 
-    // Caméra centrée sur la voiture, bornée au circuit
+    // --- Gestion Caméra ---
     sf::Vector2f carPos = mPlayer.getCar().getPosition();
     sf::Vector2f viewSize = camera.getSize();
+
+    // Clamp de la caméra pour ne pas sortir du circuit
     float minX = viewSize.x / 2.f;
-    float maxX = mTrackSize.x - viewSize.x / 2.f;
+    float maxX = std::max(minX, mTrackSize.x - viewSize.x / 2.f);
+
     float minY = viewSize.y / 2.f;
-    float maxY = mTrackSize.y - viewSize.y / 2.f;
+    float maxY = std::max(minY, mTrackSize.y - viewSize.y / 2.f);
 
-    // Sécurité si le circuit est plus petit que la caméra (rare mais possible)
-    if (maxX < minX) maxX = minX;
-    if (maxY < minY) maxY = minY;
+    carPos.x = std::clamp(carPos.x, minX, maxX);
+    carPos.y = std::clamp(carPos.y, minY, maxY);
 
-    carPos.x = std::max(minX, std::min(carPos.x, maxX));
-    carPos.y = std::max(minY, std::min(carPos.y, maxY));
     camera.setCenter(carPos);
 }
 
-/// @brief Render world
-/// @param isPlaying True if game is in playing state
-/// @see https://www.sfml-dev.org/documentation/3.0.0/classsf_1_1RenderWindow.php#a839bbf336bd120d2a91d87a47f5296b2
 void World::render(bool isPlaying, float alpha) {
-    // 1. Définir la zone visible par la caméra
-    // On agrandit légèrement la zone (buffer) pour éviter que les objets disparaissent "trop tôt" sur les bords
-    sf::View currentView = mWindow.getView();
+    // 1. Définition de la vue et du Culling
+    const sf::View& currentView = mWindow.getView();
+    sf::Vector2f center = currentView.getCenter();
+    sf::Vector2f size = currentView.getSize();
+
+    // Marge de sécurité pour éviter le clipping sur les bords
+    float buffer = 100.f;
+
+    // CORRECTION SFML 3 : On utilise des accolades {} pour créer des Vector2f
     sf::FloatRect viewBounds(
-        currentView.getCenter() - currentView.getSize() / 2.f, // Top-Left
-        currentView.getSize()
+        {center.x - size.x / 2.f - buffer, center.y - size.y / 2.f - buffer}, // Position (Vector2f)
+        {size.x + buffer * 2.f, size.y + buffer * 2.f}                        // Taille (Vector2f)
     );
 
-    // Ajout d'une marge de sécurité (ex: 50 pixels)
-    float buffer = 50.f;
-    viewBounds.position.x -= buffer;
-    viewBounds.position.y -= buffer;
-    viewBounds.size.x += buffer * 2.f;
-    viewBounds.size.y += buffer * 2.f;
-
-    // 2. CULLING DU CIRCUIT
-    // Le circuit est grand, mais si on zoome ou si la map est immense, ça sert.
-    // mTrackSize est stocké dans World (voir votre constructeur)
+    // 2. Rendu du Circuit
+    // SFML 3 : Rect constructeur prend (Position, Taille)
     sf::FloatRect trackRect({0.f, 0.f}, mTrackSize);
 
-    // Si le rectangle du circuit touche la vue, on dessine
-    if (viewBounds.findIntersection(trackRect)) { // SFML 3: findIntersection retourne un optional<Rect>, qui est 'true' si valide
+    if (viewBounds.findIntersection(trackRect)) {
         mTrack.render(mWindow);
     }
 
-    // 3. CULLING DU GHOST
-    // Le fantôme peut être loin derrière ou devant. On ne le dessine que s'il est visible.
-    // Supposons que le Ghost a une position accessible. S'il n'en a pas, on dessine toujours.
-    // Ici, on fait appel au render normal, on pourrait optimiser DANS GhostManager::render.
+    // 3. Rendu du Ghost
     mGhost.render(mWindow, isPlaying);
 
-    // 4. JOUEUR
-    // Le joueur est quasi toujours au centre, donc le culling est inutile (et risqué), on dessine toujours.
+    // 4. Rendu du Joueur
     mPlayer.render(mWindow, alpha);
 }
 
-/// @brief Get track bounds
-/// @return Track bounding rectangle
 sf::FloatRect World::getTrackBounds() const {
+    // Correction ici aussi par sécurité pour SFML 3
     return sf::FloatRect({0.f, 0.f}, mTrackSize);
 }
 
-/// @brief Check if lap is complete
-/// @return True if lap complete
 bool World::isLapComplete() {
     bool touchedCheckpoint = mCheckpoints.isLapComplete();
     bool onBlue = mCollisionMask.isOnBlue(mPlayer.getCar().getPosition());
-    if (!(touchedCheckpoint && onBlue)) {
-        return false;
+
+    if (touchedCheckpoint && onBlue) {
+        if (mGhost.handleLapComplete()) {
+            mCheckpoints.reset();
+            mLapCount++;
+            return true;
+        }
     }
-    if (!mGhost.handleLapComplete()) {
-        return false;
-    }
-    mCheckpoints.reset();
-    mLapCount++;
-    return true;
+    return false;
 }
 
-/// @brief Reset world state
 void World::reset() {
     mCheckpoints.reset();
     mPlayer.reset();
@@ -136,26 +118,7 @@ void World::reset() {
     mLapCount = 0;
 }
 
-/// @brief Get player
-/// @return Reference to player
-Player& World::getPlayer() {
-    return mPlayer;
-}
-
-/// @brief Get player car
-/// @return Reference to car
-Car& World::getCar() {
-    return mPlayer.getCar();
-}
-
-/// @brief Get lap count
-/// @return Number of laps
-int World::getLapCount() const {
-    return mLapCount;
-}
-
-/// @brief Get ghost manager
-/// @return Reference to ghost manager
-GhostManager& World::getGhost() {
-    return mGhost;
-}
+Player& World::getPlayer() { return mPlayer; }
+Car& World::getCar() { return mPlayer.getCar(); }
+int World::getLapCount() const { return mLapCount; }
+GhostManager& World::getGhost() { return mGhost; }

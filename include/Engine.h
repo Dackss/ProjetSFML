@@ -2,7 +2,7 @@
 #define ENGINE_H
 
 #include <SFML/Graphics.hpp>
-#include <SFML/Window.hpp> // Nécessaire pour sf::State
+#include <SFML/Window.hpp>
 #include <memory>
 #include "World.h"
 #include "AssetsManager.h"
@@ -32,10 +32,16 @@ private:
     /// @brief Render game
     void render(float alpha = 1.0f);
 
+    /// @brief Toggle between Fullscreen and Windowed mode
+    void toggleFullscreen();
+
 private:
+    // L'ordre de déclaration est important pour l'initialisation
+    sf::ContextSettings mContextSettings;
     sf::RenderWindow mWindow;
     sf::View mCamera;
     sf::Time mTimePerFrame;
+
     AssetsManager mAssetsManager;
     std::unique_ptr<World> mWorld;
     std::unique_ptr<Menu> mMenu;
@@ -43,7 +49,8 @@ private:
     std::unique_ptr<Camera> mCameraManager;
     std::unique_ptr<GameManager> mGameManager;
 
-    bool mIsFullscreen; // Ajouté pour gérer le basculement F11
+    bool mIsFullscreen;
+    bool mHasFocus;
 };
 
 #endif // ENGINE_H
