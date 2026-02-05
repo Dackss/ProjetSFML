@@ -52,8 +52,10 @@ Engine::Engine()
     if (maxTextureSize <= 4096 || maxTextureSize == 16384) {
         printf("FORCING SD MODE: Low spec or Driver issue detected.\n");
         mAssetsManager.setUseSDAssets(true);
+        circuitFile = Config::FILE_CIRCUIT_SD;
     } else {
         mAssetsManager.setUseSDAssets(false);
+        circuitFile = Config::FILE_CIRCUIT_HD;
     }
 
     /// Load textures
@@ -62,7 +64,7 @@ Engine::Engine()
 
     if (!mAssetsManager.loadTexture("circuit", circuitPath) ||
         !mAssetsManager.loadTexture("voiture", voiturePath)) {
-        throw std::runtime_error("Failed to load textures");
+        throw std::runtime_error("Failed to load textures: " + circuitPath); // Debug facilité
     }
 
     /// Initialize world
