@@ -87,6 +87,7 @@ Engine::Engine()
     mGameManager = std::make_unique<GameManager>();
 
     mCameraManager->update(mCamera, mWorld->getCar().getPosition(), mWorld->getTrackBounds().size);
+    mHud->setBestTimes(mWorld->getGhost().getBestTimes());
 }
 
 void Engine::run() {
@@ -230,7 +231,6 @@ void Engine::update(sf::Time deltaTime) {
     float time = mGameManager->getRaceTime();
     int countdown = mGameManager->isCountdown() ? mGameManager->getCountdownValue() : -2;
     mHud->update(speed, time, countdown, mWindow.getSize());
-    mHud->setBestTimes(mWorld->getGhost().getBestTimes());
 }
 
 void Engine::render(float alpha) {

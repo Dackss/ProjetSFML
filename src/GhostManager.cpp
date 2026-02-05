@@ -30,6 +30,8 @@ void GhostManager::reset() {
     mHasCrossedStart = false;
     mNewGhostPositions.clear();
     mNewGhostRotations.clear();
+    mNewGhostPositions.reserve(12000);
+    mNewGhostRotations.reserve(12000);
 }
 
 /// @brief Update ghost state

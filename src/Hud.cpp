@@ -33,38 +33,39 @@ HUD::HUD(const sf::Font& font)
 /// @param countdown Countdown value
 /// @param windowSize Window dimensions
 void HUD::update(float speedKmH, float raceTime, int countdown, sf::Vector2u windowSize) {
-    char speedStr[64]; // Augmenté de 16 à 64
-    snprintf(speedStr, sizeof(speedStr), "Vitesse: %.2f km/h", speedKmH);
-    mSpeedText.setString(speedStr);
+    if (std::abs(speedKmH - mLastSpeed) > 0.1f) {
+        char speedStr[64];
+        snprintf(speedStr, sizeof(speedStr), "Vitesse: %.0f km/h", speedKmH); // %.0f est plus lisible en jeu
+        mSpeedText.setString(speedStr);
+        mLastSpeed = speedKmH;
+
+        // Repositionnement uniquement quand le texte change de taille
+        sf::FloatRect speedBounds = mSpeedText.getLocalBounds();
+        mSpeedText.setOrigin({speedBounds.size.x, 0.f});
+        mSpeedText.setPosition({float(windowSize.x) - 15.f, float(windowSize.y) - 50.f});
+    }
+
+    if (countdown != mLastCountdown) {
+        if (countdown >= 0) {
+            mCountdownText.setString(std::to_string(countdown));
+        } else if (countdown == -1) {
+            mCountdownText.setString("GO!");
+        } else {
+            mCountdownText.setString("");
+        }
+
+        sf::FloatRect cdBounds = mCountdownText.getLocalBounds();
+        mCountdownText.setOrigin(cdBounds.size / 2.f + cdBounds.position);
+        mCountdownText.setPosition({windowSize.x / 2.f, windowSize.y / 2.f});
+
+        mLastCountdown = countdown;
+    }
 
     if (countdown < 0) {
-        char timeStr[64]; // Augmenté de 16 à 64
+        char timeStr[64];
         snprintf(timeStr, sizeof(timeStr), "Temps: %.2f s", raceTime);
         mTimerText.setString(timeStr);
     }
-
-    /// Update countdown text
-    if (countdown >= 0) {
-        mCountdownText.setString(std::to_string(countdown));
-    } else if (countdown == -1) {
-        mCountdownText.setString("GO!");
-    } else {
-        mCountdownText.setString("");
-    }
-
-    /// Position timer text (top-left)
-    mTimerText.setOrigin({0.f, 0.f});
-    mTimerText.setPosition({15.f, 10.f});
-
-    /// Position speed text (bottom-right)
-    sf::FloatRect speedBounds = mSpeedText.getLocalBounds();
-    mSpeedText.setOrigin({speedBounds.size.x, 0.f});
-    mSpeedText.setPosition({float(windowSize.x) - 15.f, float(windowSize.y) - 50.f});
-
-    /// Position countdown text (center)
-    sf::FloatRect cdBounds = mCountdownText.getLocalBounds();
-    mCountdownText.setOrigin(cdBounds.size / 2.f + cdBounds.position);
-    mCountdownText.setPosition({windowSize.x / 2.f, windowSize.y / 2.f});
 }
 
 /// @brief Set best times display

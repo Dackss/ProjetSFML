@@ -31,3 +31,5 @@ assets/*.tmp
 /.idea
 /.vscode
 /.vs
+
+build_wsl

@@ -31,6 +31,8 @@ private:
     sf::Text mTimerText;        ///< Race timer display
     sf::Text mCountdownText;    ///< Countdown display
     std::vector<sf::Text> mBestTimesText; ///< Best times display
+    int mLastCountdown = -99;
+    int mLastSpeed = -1;
 };
 
 #endif // HUD_H
