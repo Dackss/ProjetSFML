@@ -47,13 +47,15 @@ Engine::Engine()
 
     unsigned int maxTextureSize = sf::Texture::getMaximumSize();
     printf("GPU Max Texture Size: %u px\n", maxTextureSize);
+
     std::string circuitFile;
 
-    if (maxTextureSize <= 4096 || maxTextureSize == 16384) {
-        printf("FORCING SD MODE: Low spec or Driver issue detected.\n");
+    if (maxTextureSize <= Config::TEXTURE_LIMIT_THRESHOLD) {
+        printf("FORCING SD MODE: Low spec detected.\n");
         mAssetsManager.setUseSDAssets(true);
         circuitFile = Config::FILE_CIRCUIT_SD;
     } else {
+        printf("HD MODE ENABLED.\n");
         mAssetsManager.setUseSDAssets(false);
         circuitFile = Config::FILE_CIRCUIT_HD;
     }
