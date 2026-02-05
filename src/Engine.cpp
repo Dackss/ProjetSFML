@@ -27,7 +27,7 @@ Engine::Engine()
       mHasFocus(true)
 {
     // Configuration de l'anti-aliasing (SFML 3 : antiAliasingLevel avec un grand 'A')
-    mContextSettings.antiAliasingLevel = 8;
+    mContextSettings.antiAliasingLevel = 0;
 
     // Création de la fenêtre (SFML 3 : create prend VideoMode, Titre, Style, State, Settings)
     // Pour le fullscreen, le style est ignoré ou mis à Default, et l'état est State::Fullscreen
@@ -49,14 +49,10 @@ Engine::Engine()
     printf("GPU Max Texture Size: %u px\n", maxTextureSize);
     std::string circuitFile;
 
-    if (maxTextureSize <= Config::TEXTURE_LIMIT_THRESHOLD) {
-        printf("Mode: Low/Medium Spec detected. Loading SD assets.\n");
-        circuitFile = Config::FILE_CIRCUIT_SD;
-        // On sauvegarde l'info que nous sommes en mode SD pour le masque plus tard
-        mAssetsManager.setUseSDAssets(true); // <--- Voir point 4
+    if (maxTextureSize <= 4096 || maxTextureSize == 16384) {
+        printf("FORCING SD MODE: Low spec or Driver issue detected.\n");
+        mAssetsManager.setUseSDAssets(true);
     } else {
-        printf("Mode: High Spec detected. Loading HD assets.\n");
-        circuitFile = Config::FILE_CIRCUIT_HD;
         mAssetsManager.setUseSDAssets(false);
     }
 
