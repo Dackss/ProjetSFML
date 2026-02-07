@@ -3,22 +3,26 @@
 #include <SFML/Window/Joystick.hpp>
 #include <stdexcept>
 #include <cmath>
-#include <iostream> // Pour les logs
+#include <iostream>
 
-// Fonction utilitaire pour garder le ratio d'aspect (bandes noires si nécessaire)
+// --- FONCTION UTILITAIRE ---
+
+// Ajuste la vue pour garder le ratio d'aspect (bandes noires si nécessaire)
 static void adjustView(const sf::Vector2u& windowSize, sf::View& view, float targetRatio) {
     float windowRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
 
     if (windowRatio > targetRatio) {
-        // Fenêtre plus large que le jeu
+        // Écran plus large que le jeu
         float scaleFactor = targetRatio / windowRatio;
         view.setViewport(sf::FloatRect({(1.f - scaleFactor) / 2.f, 0.f}, {scaleFactor, 1.f}));
     } else {
-        // Fenêtre plus haute que le jeu
+        // Écran plus haut que le jeu
         float scaleFactor = windowRatio / targetRatio;
         view.setViewport(sf::FloatRect({0.f, (1.f - scaleFactor) / 2.f}, {1.f, scaleFactor}));
     }
 }
+
+// --- CLASSE ENGINE ---
 
 Engine::Engine()
     : mCamera(sf::FloatRect({0.f, 0.f}, {Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT})),
@@ -26,45 +30,40 @@ Engine::Engine()
       mIsFullscreen(true),
       mHasFocus(true)
 {
-    mContextSettings.antiAliasingLevel = 0;
+    mContextSettings.antiAliasingLevel = Config::ANTIALIASING_LEVEL;
 
-    // --- CORRECTION RÉSOLUTION & SFML 3 ---
+    // --- CRÉATION DE LA FENÊTRE (LOGIQUE FIX LAPTOP/WSL) ---
+    sf::VideoMode mode;
+    std::uint32_t style;
+    sf::State state;
 
-    // 1. On cible 1920x1080 pour alléger la bande passante WSL (vs 2K/4K)
-    sf::VideoMode fullscreenMode({1920, 1080});
-
-    // 2. Vérification : est-ce que l'écran supporte 1920x1080 ?
-    bool isValid = false;
-    auto modes = sf::VideoMode::getFullscreenModes();
-    for(const auto& mode : modes) {
-        if (mode.size.x == 1920 && mode.size.y == 1080) {
-            isValid = true;
-            break;
-        }
-    }
-
-    // Si 1080p n'est pas dispo, on se rabat sur le DesktopMode (tant pis pour la perf)
-    if (!isValid) {
-        std::cout << "1080p non supporté, utilisation de la résolution native." << std::endl;
-        fullscreenMode = sf::VideoMode::getDesktopMode();
+    if (mIsFullscreen && Config::USE_BORDERLESS_FULLSCREEN) {
+        std::cout << "[VIDEO] Mode: Borderless Fullscreen (Optimisé WSL)" << std::endl;
+        mode = sf::VideoMode::getDesktopMode();
+        style = sf::Style::None;
+        state = sf::State::Windowed;
+    } else if (mIsFullscreen) {
+        // Fallback classique
+        mode = sf::VideoMode::getDesktopMode();
+        style = sf::Style::Default;
+        state = sf::State::Fullscreen;
     } else {
-        std::cout << "Forçage de la résolution 1920x1080 pour fluidité WSL." << std::endl;
+        // CORRECTION ICI : Ajout des accolades {} pour SFML 3
+        mode = sf::VideoMode({static_cast<unsigned int>(Config::WINDOW_WIDTH), static_cast<unsigned int>(Config::WINDOW_HEIGHT)});
+        style = sf::Style::Default;
+        state = sf::State::Windowed;
     }
 
-    // 3. Création de la fenêtre avec la syntaxe SFML 3
-    // Style = Default (pour avoir les décorations en mode fenêtré si besoin)
-    // State = Fullscreen (C'est LUI qui active le vrai plein écran)
-    mWindow.create(
-        fullscreenMode,
-        "RetroRush",
-        sf::Style::Default,
-        sf::State::Fullscreen,
-        mContextSettings
-    );
+    mWindow.create(mode, "RetroRush", style, state, mContextSettings);
 
-    // --- REGLAGES CRITIQUES DE FLUIDITÉ ---
-    mWindow.setVerticalSyncEnabled(false); // VSync OFF pour laisser le moteur tourner
-    mWindow.setFramerateLimit(0);          // Limite OFF (Unlimited FPS)
+    // Positionnement en 0,0 si Borderless
+    if (mIsFullscreen && Config::USE_BORDERLESS_FULLSCREEN) {
+        mWindow.setPosition({0, 0});
+    }
+
+    // --- REGLAGES DE FLUIDITÉ ---
+    mWindow.setVerticalSyncEnabled(Config::ENABLE_VSYNC);
+    mWindow.setFramerateLimit(Config::FRAME_LIMIT);
     mWindow.setMouseCursorVisible(false);
 
     // Ajustement de la vue (caméra)
@@ -116,18 +115,15 @@ void Engine::run() {
     sf::Time timeSinceLastUpdate = sf::Time::Zero;
 
     while (mWindow.isOpen()) {
-        // 1. Inputs (Toujours avant la physique pour la réactivité)
         processEvents();
 
         sf::Time deltaTime = clock.restart();
         timeSinceLastUpdate += deltaTime;
 
-        // Protection "Spiral of Death" (si le PC lag, on ne rattrape pas tout d'un coup)
         if (timeSinceLastUpdate > mTimePerFrame * 5.0f) {
             timeSinceLastUpdate = mTimePerFrame * 5.0f;
         }
 
-        // 2. Physique (Pas de temps fixe à 60Hz)
         while (timeSinceLastUpdate > mTimePerFrame) {
             timeSinceLastUpdate -= mTimePerFrame;
             if (mHasFocus) {
@@ -135,7 +131,6 @@ void Engine::run() {
             }
         }
 
-        // 3. Calcul FPS Réel
         frameCount++;
         if (fpsClock.getElapsedTime().asSeconds() >= 1.f) {
             float currentFps = static_cast<float>(frameCount) / fpsClock.restart().asSeconds();
@@ -143,7 +138,6 @@ void Engine::run() {
             frameCount = 0;
         }
 
-        // 4. Rendu (Interpolation entre les frames physiques)
         float alpha = timeSinceLastUpdate.asSeconds() / mTimePerFrame.asSeconds();
         render(alpha);
     }
@@ -157,34 +151,29 @@ void Engine::toggleFullscreen() {
     sf::State state;
 
     if (mIsFullscreen) {
-        // --- MODE PLEIN ECRAN (Forcé à 1080p) ---
-        mode = sf::VideoMode({1920, 1080});
-
-        // Vérification validité (copie de la logique du constructeur)
-        bool isValid = false;
-        auto modes = sf::VideoMode::getFullscreenModes();
-        for(const auto& m : modes) { if(m.size == mode.size) { isValid = true; break; } }
-        if (!isValid) mode = sf::VideoMode::getDesktopMode();
-
-        style = sf::Style::Default;
-        state = sf::State::Fullscreen; // Activation Fullscreen
+        if (Config::USE_BORDERLESS_FULLSCREEN) {
+            // MODE BORDERLESS
+            mode = sf::VideoMode::getDesktopMode();
+            style = sf::Style::None;
+            state = sf::State::Windowed;
+        } else {
+            // MODE EXCLUSIF
+            mode = sf::VideoMode::getDesktopMode();
+            style = sf::Style::Default;
+            state = sf::State::Fullscreen;
+        }
     } else {
-        // --- MODE FENÊTRE ---
+        // MODE FENÊTRE : Correction accolades ici aussi par sécurité
         mode = sf::VideoMode({static_cast<unsigned int>(Config::WINDOW_WIDTH), static_cast<unsigned int>(Config::WINDOW_HEIGHT)});
         style = sf::Style::Default;
         state = sf::State::Windowed;
     }
 
-    // Re-création de la fenêtre
     mWindow.create(mode, "RetroRush", style, state, mContextSettings);
 
-    // IMPORTANT : On réapplique les réglages de performance
-    mWindow.setVerticalSyncEnabled(false);
-    mWindow.setFramerateLimit(0);
-    mWindow.setMouseCursorVisible(!mIsFullscreen);
-
-    // Centrage en mode fenêtré
-    if (!mIsFullscreen) {
+    if (mIsFullscreen && Config::USE_BORDERLESS_FULLSCREEN) {
+        mWindow.setPosition({0, 0});
+    } else if (!mIsFullscreen) {
         auto desktop = sf::VideoMode::getDesktopMode();
         sf::Vector2i position(
             (desktop.size.x - mode.size.x) / 2,
@@ -193,7 +182,10 @@ void Engine::toggleFullscreen() {
         mWindow.setPosition(position);
     }
 
-    // Réajustement de la vue (pour gérer les bandes noires si 16:10 vs 16:9)
+    mWindow.setVerticalSyncEnabled(Config::ENABLE_VSYNC);
+    mWindow.setFramerateLimit(Config::FRAME_LIMIT);
+    mWindow.setMouseCursorVisible(!mIsFullscreen);
+
     adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
 }
 
