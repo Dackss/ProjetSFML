@@ -29,6 +29,7 @@ void Car::setupAudio(const sf::SoundBuffer& buffer) {
 // -----------------------------------------------------------------------
 void Car::update(sf::Time deltaTime, const CarControls& inputs, const sf::FloatRect& trackBounds, const CollisionMask& mask) {
     // 1. Sauvegarde état précédent pour interpolation
+    (void)trackBounds;
     mPreviousPosition = mSprite.getPosition();
     mPreviousRotation = mSprite.getRotation().asDegrees();
 
@@ -180,6 +181,7 @@ void Car::processPhysics(float dt, const CarControls& inputs, const sf::Vector2f
 
 void Car::applyDrift(const sf::Vector2f& forward, float currentSpeed) {
     // Décomposition de la vitesse
+    (void)currentSpeed;
     float forwardSpeed = mVelocity.x * forward.x + mVelocity.y * forward.y;
     sf::Vector2f forwardVelocity = forward * forwardSpeed;
     sf::Vector2f lateralVelocity = mVelocity - forwardVelocity;

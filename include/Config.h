@@ -21,6 +21,8 @@ namespace Config {
     inline constexpr float FPS = 60.0f;
     inline constexpr float TIME_PER_FRAME = 1.0f / FPS;
 
+    inline constexpr unsigned int RENDER_FPS = 144;
+
     inline constexpr float CAMERA_WIDTH = 120.0f;
     inline constexpr float CAMERA_HEIGHT = 67.5f;
     inline constexpr float CAMERA_RESIZE_FACTOR = 10.67f;

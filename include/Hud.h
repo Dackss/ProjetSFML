@@ -25,6 +25,7 @@ public:
     /// @brief Set best times display
     /// @param times Best race times
     void setBestTimes(const std::vector<sf::Time>& times);
+    void updateFPS(float fps, const sf::Vector2u& windowSize);
 
 private:
     sf::Text mSpeedText;        ///< Speed display
@@ -33,6 +34,7 @@ private:
     std::vector<sf::Text> mBestTimesText; ///< Best times display
     int mLastCountdown = -99;
     int mLastSpeed = -1;
+    sf::Text mFpsText;
 };
 
 #endif // HUD_H

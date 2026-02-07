@@ -3,8 +3,9 @@
 #include <SFML/Window/Joystick.hpp>
 #include <stdexcept>
 #include <cmath>
+#include <iostream> // Pour les logs
 
-/// @brief Helper to maintain aspect ratio
+// Fonction utilitaire pour garder le ratio d'aspect (bandes noires si nécessaire)
 static void adjustView(const sf::Vector2u& windowSize, sf::View& view, float targetRatio) {
     float windowRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
 
@@ -20,64 +21,82 @@ static void adjustView(const sf::Vector2u& windowSize, sf::View& view, float tar
 }
 
 Engine::Engine()
-    // CORRECTION ICI : L'ordre doit suivre celui de Engine.h (Resources -> State)
     : mCamera(sf::FloatRect({0.f, 0.f}, {Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT})),
       mTimePerFrame(sf::seconds(Config::TIME_PER_FRAME)),
       mIsFullscreen(true),
       mHasFocus(true)
 {
-    // Configuration de l'anti-aliasing (SFML 3 : antiAliasingLevel avec un grand 'A')
     mContextSettings.antiAliasingLevel = 0;
 
-    // Création de la fenêtre (SFML 3 : create prend VideoMode, Titre, Style, State, Settings)
-    // Pour le fullscreen, le style est ignoré ou mis à Default, et l'état est State::Fullscreen
+    // --- CORRECTION RÉSOLUTION & SFML 3 ---
+
+    // 1. On cible 1920x1080 pour alléger la bande passante WSL (vs 2K/4K)
+    sf::VideoMode fullscreenMode({1920, 1080});
+
+    // 2. Vérification : est-ce que l'écran supporte 1920x1080 ?
+    bool isValid = false;
+    auto modes = sf::VideoMode::getFullscreenModes();
+    for(const auto& mode : modes) {
+        if (mode.size.x == 1920 && mode.size.y == 1080) {
+            isValid = true;
+            break;
+        }
+    }
+
+    // Si 1080p n'est pas dispo, on se rabat sur le DesktopMode (tant pis pour la perf)
+    if (!isValid) {
+        std::cout << "1080p non supporté, utilisation de la résolution native." << std::endl;
+        fullscreenMode = sf::VideoMode::getDesktopMode();
+    } else {
+        std::cout << "Forçage de la résolution 1920x1080 pour fluidité WSL." << std::endl;
+    }
+
+    // 3. Création de la fenêtre avec la syntaxe SFML 3
+    // Style = Default (pour avoir les décorations en mode fenêtré si besoin)
+    // State = Fullscreen (C'est LUI qui active le vrai plein écran)
     mWindow.create(
-        sf::VideoMode::getDesktopMode(),
+        fullscreenMode,
         "RetroRush",
         sf::Style::Default,
         sf::State::Fullscreen,
         mContextSettings
     );
 
-    mWindow.setVerticalSyncEnabled(true);
+    // --- REGLAGES CRITIQUES DE FLUIDITÉ ---
+    mWindow.setVerticalSyncEnabled(false); // VSync OFF pour laisser le moteur tourner
+    mWindow.setFramerateLimit(0);          // Limite OFF (Unlimited FPS)
     mWindow.setMouseCursorVisible(false);
 
-    // Ajustement immédiat du ratio
+    // Ajustement de la vue (caméra)
     adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
 
+    // --- Chargement des Textures ---
     unsigned int maxTextureSize = sf::Texture::getMaximumSize();
     printf("GPU Max Texture Size: %u px\n", maxTextureSize);
 
     std::string circuitFile;
-
     if (maxTextureSize <= Config::TEXTURE_LIMIT_THRESHOLD) {
-        printf("FORCING SD MODE: Low spec detected.\n");
         mAssetsManager.setUseSDAssets(true);
         circuitFile = Config::FILE_CIRCUIT_SD;
     } else {
-        printf("HD MODE ENABLED.\n");
         mAssetsManager.setUseSDAssets(false);
         circuitFile = Config::FILE_CIRCUIT_HD;
     }
 
-    /// Load textures
     std::string circuitPath = Config::TEXTURES_PATH + circuitFile;
     std::string voiturePath = Config::TEXTURES_PATH + "voiture.png";
 
     if (!mAssetsManager.loadTexture("circuit", circuitPath) ||
         !mAssetsManager.loadTexture("voiture", voiturePath)) {
-        throw std::runtime_error("Failed to load textures: " + circuitPath); // Debug facilité
+        throw std::runtime_error("Failed to load textures");
     }
 
-    /// Initialize world
     mWorld = std::make_unique<World>(mWindow, mAssetsManager);
 
-    /// Load font
     if (!mAssetsManager.loadFont("arial", Config::FONTS_PATH + "arial.ttf")) {
         throw std::runtime_error("Failed to load font arial");
     }
 
-    /// Initialize UI and managers
     sf::Font& font = mAssetsManager.getFont("arial");
     sf::Texture& bgTexture = mAssetsManager.getTexture("circuit");
 
@@ -92,21 +111,40 @@ Engine::Engine()
 
 void Engine::run() {
     sf::Clock clock;
+    sf::Clock fpsClock;
+    int frameCount = 0;
     sf::Time timeSinceLastUpdate = sf::Time::Zero;
 
     while (mWindow.isOpen()) {
+        // 1. Inputs (Toujours avant la physique pour la réactivité)
+        processEvents();
+
         sf::Time deltaTime = clock.restart();
         timeSinceLastUpdate += deltaTime;
 
+        // Protection "Spiral of Death" (si le PC lag, on ne rattrape pas tout d'un coup)
+        if (timeSinceLastUpdate > mTimePerFrame * 5.0f) {
+            timeSinceLastUpdate = mTimePerFrame * 5.0f;
+        }
+
+        // 2. Physique (Pas de temps fixe à 60Hz)
         while (timeSinceLastUpdate > mTimePerFrame) {
             timeSinceLastUpdate -= mTimePerFrame;
-            processEvents();
             if (mHasFocus) {
                 update(mTimePerFrame);
             }
         }
-        float alpha = timeSinceLastUpdate.asSeconds() / mTimePerFrame.asSeconds();
 
+        // 3. Calcul FPS Réel
+        frameCount++;
+        if (fpsClock.getElapsedTime().asSeconds() >= 1.f) {
+            float currentFps = static_cast<float>(frameCount) / fpsClock.restart().asSeconds();
+            mHud->updateFPS(currentFps, mWindow.getSize());
+            frameCount = 0;
+        }
+
+        // 4. Rendu (Interpolation entre les frames physiques)
+        float alpha = timeSinceLastUpdate.asSeconds() / mTimePerFrame.asSeconds();
         render(alpha);
     }
 }
@@ -115,29 +153,39 @@ void Engine::toggleFullscreen() {
     mIsFullscreen = !mIsFullscreen;
 
     sf::VideoMode mode;
-    sf::State state;
     std::uint32_t style;
+    sf::State state;
 
     if (mIsFullscreen) {
-        mode = sf::VideoMode::getDesktopMode();
-        state = sf::State::Fullscreen;
+        // --- MODE PLEIN ECRAN (Forcé à 1080p) ---
+        mode = sf::VideoMode({1920, 1080});
+
+        // Vérification validité (copie de la logique du constructeur)
+        bool isValid = false;
+        auto modes = sf::VideoMode::getFullscreenModes();
+        for(const auto& m : modes) { if(m.size == mode.size) { isValid = true; break; } }
+        if (!isValid) mode = sf::VideoMode::getDesktopMode();
+
         style = sf::Style::Default;
+        state = sf::State::Fullscreen; // Activation Fullscreen
     } else {
-        // SFML 3 : VideoMode prend un Vector2u ({w, h})
+        // --- MODE FENÊTRE ---
         mode = sf::VideoMode({static_cast<unsigned int>(Config::WINDOW_WIDTH), static_cast<unsigned int>(Config::WINDOW_HEIGHT)});
-        state = sf::State::Windowed;
         style = sf::Style::Default;
+        state = sf::State::Windowed;
     }
 
-    // Re-création avec la signature SFML 3
+    // Re-création de la fenêtre
     mWindow.create(mode, "RetroRush", style, state, mContextSettings);
 
-    mWindow.setVerticalSyncEnabled(true);
+    // IMPORTANT : On réapplique les réglages de performance
+    mWindow.setVerticalSyncEnabled(false);
+    mWindow.setFramerateLimit(0);
     mWindow.setMouseCursorVisible(!mIsFullscreen);
 
+    // Centrage en mode fenêtré
     if (!mIsFullscreen) {
         auto desktop = sf::VideoMode::getDesktopMode();
-        // SFML 3 : VideoMode.size.x au lieu de .width
         sf::Vector2i position(
             (desktop.size.x - mode.size.x) / 2,
             (desktop.size.y - mode.size.y) / 2
@@ -145,6 +193,7 @@ void Engine::toggleFullscreen() {
         mWindow.setPosition(position);
     }
 
+    // Réajustement de la vue (pour gérer les bandes noires si 16:10 vs 16:9)
     adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
 }
 
@@ -158,7 +207,6 @@ void Engine::processEvents() {
         else if (const auto* resizeEvent = event.getIf<sf::Event::Resized>()) {
             adjustView(resizeEvent->size, mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
         }
-        // SFML 3 : FocusLost / FocusGained (inversion des termes par rapport à v2)
         else if (event.is<sf::Event::FocusLost>()) {
             mHasFocus = false;
         }
@@ -174,9 +222,8 @@ void Engine::processEvents() {
             }
         }
 
-        if (!mHasFocus) return;
+        if (!mHasFocus) continue;
 
-        // GESTION MENU
         if (mGameManager->isInMenu() || mGameManager->isFinished()) {
             bool startRequested = false;
 
@@ -196,7 +243,6 @@ void Engine::processEvents() {
                     ScoreManager::saveTime(mGameManager->getRaceTime());
                     mMenu->updateHighScores();
                 }
-
                 mGameManager->reset();
                 mGameManager->startCountdown();
                 mWorld->reset();

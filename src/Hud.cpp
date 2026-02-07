@@ -4,7 +4,7 @@
 /// @brief Constructor
 /// @param font Text font
 HUD::HUD(const sf::Font& font)
-        : mSpeedText(font), mTimerText(font), mCountdownText(font) {
+        : mSpeedText(font), mTimerText(font), mCountdownText(font), mFpsText(font) {
     /// Configure speed text
     mSpeedText.setCharacterSize(36);
     mSpeedText.setFillColor(sf::Color::Cyan);
@@ -25,6 +25,10 @@ HUD::HUD(const sf::Font& font)
     mCountdownText.setOutlineColor(sf::Color::Black);
     mCountdownText.setOutlineThickness(5.f);
     mCountdownText.setStyle(sf::Text::Bold);
+    mFpsText.setFont(font);
+    mFpsText.setCharacterSize(20);
+    mFpsText.setFillColor(sf::Color::Yellow);
+    mFpsText.setPosition({10.f, 10.f});
 }
 
 /// @brief Update HUD texts
@@ -98,4 +102,18 @@ void HUD::render(sf::RenderWindow& window) {
     for (const auto& text : mBestTimesText) {
         window.draw(text);
     }
+    window.draw(mFpsText);
+}
+
+void HUD::updateFPS(float fps, const sf::Vector2u& windowSize) {
+    // Mise à jour du texte
+    mFpsText.setString("FPS: " + std::to_string(static_cast<int>(fps)));
+
+    // Calcul de la position pour le coin haut-droite
+    // On utilise les bornes locales du texte pour connaître sa largeur réelle
+    float margin = 10.f;
+    float posX = static_cast<float>(windowSize.x) - mFpsText.getLocalBounds().size.x - margin;
+    float posY = margin;
+
+    mFpsText.setPosition({posX, posY});
 }
