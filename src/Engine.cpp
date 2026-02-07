@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "Config.h"
 #include "ScoreManager.h"
 #include <SFML/Window/Joystick.hpp>
 #include <stdexcept>
@@ -6,17 +7,14 @@
 #include <iostream>
 
 // --- FONCTION UTILITAIRE ---
-
-// Ajuste la vue pour garder le ratio d'aspect (bandes noires si nécessaire)
 static void adjustView(const sf::Vector2u& windowSize, sf::View& view, float targetRatio) {
     float windowRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
-
     if (windowRatio > targetRatio) {
-        // Écran plus large que le jeu
+        // Écran plus large que le jeu (Bandes noires sur les côtés)
         float scaleFactor = targetRatio / windowRatio;
         view.setViewport(sf::FloatRect({(1.f - scaleFactor) / 2.f, 0.f}, {scaleFactor, 1.f}));
     } else {
-        // Écran plus haut que le jeu
+        // Écran plus haut que le jeu (Bandes noires en haut/bas)
         float scaleFactor = windowRatio / targetRatio;
         view.setViewport(sf::FloatRect({0.f, (1.f - scaleFactor) / 2.f}, {1.f, scaleFactor}));
     }
@@ -27,66 +25,27 @@ static void adjustView(const sf::Vector2u& windowSize, sf::View& view, float tar
 Engine::Engine()
     : mCamera(sf::FloatRect({0.f, 0.f}, {Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT})),
       mTimePerFrame(sf::seconds(Config::TIME_PER_FRAME)),
-      mIsFullscreen(true),
+      mIsFullscreen(true), // Démarre directement en Fullscreen
       mHasFocus(true)
 {
     mContextSettings.antiAliasingLevel = Config::ANTIALIASING_LEVEL;
 
-    // --- CRÉATION DE LA FENÊTRE (LOGIQUE FIX LAPTOP/WSL) ---
-    sf::VideoMode mode;
-    std::uint32_t style;
-    sf::State state;
+    // Initialisation fenêtre
+    recreateWindow();
 
-    if (mIsFullscreen && Config::USE_BORDERLESS_FULLSCREEN) {
-        std::cout << "[VIDEO] Mode: Borderless Fullscreen (Optimisé WSL)" << std::endl;
-        mode = sf::VideoMode::getDesktopMode();
-        style = sf::Style::None;
-        state = sf::State::Windowed;
-    } else if (mIsFullscreen) {
-        // Fallback classique
-        mode = sf::VideoMode::getDesktopMode();
-        style = sf::Style::Default;
-        state = sf::State::Fullscreen;
-    } else {
-        // CORRECTION ICI : Ajout des accolades {} pour SFML 3
-        mode = sf::VideoMode({static_cast<unsigned int>(Config::WINDOW_WIDTH), static_cast<unsigned int>(Config::WINDOW_HEIGHT)});
-        style = sf::Style::Default;
-        state = sf::State::Windowed;
-    }
+    // --- LOG DE DEBUG ---
+    // Affiche la résolution détectée pour confirmer le mode Desktop
+    auto desktop = sf::VideoMode::getDesktopMode();
+    std::cout << "[VIDEO] Desktop Resolution: " << desktop.size.x << "x" << desktop.size.y << std::endl;
 
-    mWindow.create(mode, "RetroRush", style, state, mContextSettings);
-
-    // Positionnement en 0,0 si Borderless
-    if (mIsFullscreen && Config::USE_BORDERLESS_FULLSCREEN) {
-        mWindow.setPosition({0, 0});
-    }
-
-    // --- REGLAGES DE FLUIDITÉ ---
-    mWindow.setVerticalSyncEnabled(Config::ENABLE_VSYNC);
-    mWindow.setFramerateLimit(Config::FRAME_LIMIT);
-    mWindow.setMouseCursorVisible(false);
-
-    // Ajustement de la vue (caméra)
-    adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
-
-    // --- Chargement des Textures ---
+    // --- Chargement Assets ---
     unsigned int maxTextureSize = sf::Texture::getMaximumSize();
-    printf("GPU Max Texture Size: %u px\n", maxTextureSize);
+    bool useSD = (maxTextureSize <= Config::TEXTURE_LIMIT_THRESHOLD);
+    mAssetsManager.setUseSDAssets(useSD);
+    std::string circuitFile = useSD ? Config::FILE_CIRCUIT_SD : Config::FILE_CIRCUIT_HD;
 
-    std::string circuitFile;
-    if (maxTextureSize <= Config::TEXTURE_LIMIT_THRESHOLD) {
-        mAssetsManager.setUseSDAssets(true);
-        circuitFile = Config::FILE_CIRCUIT_SD;
-    } else {
-        mAssetsManager.setUseSDAssets(false);
-        circuitFile = Config::FILE_CIRCUIT_HD;
-    }
-
-    std::string circuitPath = Config::TEXTURES_PATH + circuitFile;
-    std::string voiturePath = Config::TEXTURES_PATH + "voiture.png";
-
-    if (!mAssetsManager.loadTexture("circuit", circuitPath) ||
-        !mAssetsManager.loadTexture("voiture", voiturePath)) {
+    if (!mAssetsManager.loadTexture("circuit", Config::TEXTURES_PATH + circuitFile) ||
+        !mAssetsManager.loadTexture("voiture", Config::TEXTURES_PATH + "voiture.png")) {
         throw std::runtime_error("Failed to load textures");
     }
 
@@ -96,11 +55,8 @@ Engine::Engine()
         throw std::runtime_error("Failed to load font arial");
     }
 
-    sf::Font& font = mAssetsManager.getFont("arial");
-    sf::Texture& bgTexture = mAssetsManager.getTexture("circuit");
-
-    mMenu = std::make_unique<Menu>(font, bgTexture);
-    mHud = std::make_unique<HUD>(font);
+    mMenu = std::make_unique<Menu>(mAssetsManager.getFont("arial"), mAssetsManager.getTexture("circuit"));
+    mHud = std::make_unique<HUD>(mAssetsManager.getFont("arial"));
     mCameraManager = std::make_unique<Camera>(Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT);
     mGameManager = std::make_unique<GameManager>();
 
@@ -108,29 +64,94 @@ Engine::Engine()
     mHud->setBestTimes(mWorld->getGhost().getBestTimes());
 }
 
+void Engine::recreateWindow() {
+    sf::VideoMode mode;
+    std::uint32_t style;
+    sf::State state;
+
+    if (mIsFullscreen) {
+        // --- VRAI FULLSCREEN NATIF ---
+        // On récupère la résolution native de l'écran.
+        mode = sf::VideoMode::getDesktopMode();
+
+        // On demande explicitement l'état "Fullscreen" au système d'exploitation.
+        // SFML s'occupera de retirer les bordures et de couvrir l'écran.
+        style = sf::Style::Default;
+        state = sf::State::Fullscreen;
+    } else {
+        // --- MODE FENÊTRÉ ---
+        mode = sf::VideoMode({static_cast<unsigned int>(Config::WINDOW_WIDTH), static_cast<unsigned int>(Config::WINDOW_HEIGHT)});
+        style = sf::Style::Default;
+        state = sf::State::Windowed;
+    }
+
+    // Création de la fenêtre
+    mWindow.create(mode, "RetroRush", style, state, mContextSettings);
+
+    // --- POSITIONNEMENT ---
+    // En mode Fullscreen natif, on ne doit JAMAIS utiliser setPosition.
+    // Le système place la fenêtre automatiquement en (0,0).
+    if (!mIsFullscreen) {
+        auto desktop = sf::VideoMode::getDesktopMode();
+        mWindow.setPosition({
+            static_cast<int>(desktop.size.x - mode.size.x) / 2,
+            static_cast<int>(desktop.size.y - mode.size.y) / 2
+        });
+    }
+
+    // --- PARAMÈTRES VIDEO ---
+    if (Config::ENABLE_VSYNC) {
+        mWindow.setVerticalSyncEnabled(true);
+        mWindow.setFramerateLimit(0);
+    } else {
+        mWindow.setVerticalSyncEnabled(false);
+        if (Config::FRAME_LIMIT > 0) {
+            mWindow.setFramerateLimit(Config::FRAME_LIMIT);
+        }
+    }
+
+    // Cache le curseur en jeu si plein écran
+    mWindow.setMouseCursorVisible(!mIsFullscreen);
+
+    // Ajuste la caméra (Ratio aspect)
+    adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
+
+    std::cout << "[VIDEO] Mode active: " << (mIsFullscreen ? "Fullscreen Natif" : "Fenetre")
+              << " (" << mWindow.getSize().x << "x" << mWindow.getSize().y << ")" << std::endl;
+}
+
 void Engine::run() {
     sf::Clock clock;
+    sf::Time timeSinceLastUpdate = sf::Time::Zero;
     sf::Clock fpsClock;
     int frameCount = 0;
-    sf::Time timeSinceLastUpdate = sf::Time::Zero;
 
     while (mWindow.isOpen()) {
         processEvents();
 
+        // Pause CPU si perte de focus
+        if (!mHasFocus) {
+            sf::sleep(sf::milliseconds(100));
+            clock.restart();
+            continue;
+        }
+
         sf::Time deltaTime = clock.restart();
         timeSinceLastUpdate += deltaTime;
 
-        if (timeSinceLastUpdate > mTimePerFrame * 5.0f) {
-            timeSinceLastUpdate = mTimePerFrame * 5.0f;
+        // Protection Lag (max 0.2s de rattrapage)
+        if (timeSinceLastUpdate > sf::seconds(0.2f)) {
+            timeSinceLastUpdate = sf::seconds(0.2f);
         }
 
+        // Physique à pas fixe
         while (timeSinceLastUpdate > mTimePerFrame) {
             timeSinceLastUpdate -= mTimePerFrame;
-            if (mHasFocus) {
-                update(mTimePerFrame);
-            }
+            processEvents();
+            if(mHasFocus) update(mTimePerFrame);
         }
 
+        // Compteur FPS
         frameCount++;
         if (fpsClock.getElapsedTime().asSeconds() >= 1.f) {
             float currentFps = static_cast<float>(frameCount) / fpsClock.restart().asSeconds();
@@ -138,6 +159,7 @@ void Engine::run() {
             frameCount = 0;
         }
 
+        // Rendu interpolé
         float alpha = timeSinceLastUpdate.asSeconds() / mTimePerFrame.asSeconds();
         render(alpha);
     }
@@ -145,48 +167,7 @@ void Engine::run() {
 
 void Engine::toggleFullscreen() {
     mIsFullscreen = !mIsFullscreen;
-
-    sf::VideoMode mode;
-    std::uint32_t style;
-    sf::State state;
-
-    if (mIsFullscreen) {
-        if (Config::USE_BORDERLESS_FULLSCREEN) {
-            // MODE BORDERLESS
-            mode = sf::VideoMode::getDesktopMode();
-            style = sf::Style::None;
-            state = sf::State::Windowed;
-        } else {
-            // MODE EXCLUSIF
-            mode = sf::VideoMode::getDesktopMode();
-            style = sf::Style::Default;
-            state = sf::State::Fullscreen;
-        }
-    } else {
-        // MODE FENÊTRE : Correction accolades ici aussi par sécurité
-        mode = sf::VideoMode({static_cast<unsigned int>(Config::WINDOW_WIDTH), static_cast<unsigned int>(Config::WINDOW_HEIGHT)});
-        style = sf::Style::Default;
-        state = sf::State::Windowed;
-    }
-
-    mWindow.create(mode, "RetroRush", style, state, mContextSettings);
-
-    if (mIsFullscreen && Config::USE_BORDERLESS_FULLSCREEN) {
-        mWindow.setPosition({0, 0});
-    } else if (!mIsFullscreen) {
-        auto desktop = sf::VideoMode::getDesktopMode();
-        sf::Vector2i position(
-            (desktop.size.x - mode.size.x) / 2,
-            (desktop.size.y - mode.size.y) / 2
-        );
-        mWindow.setPosition(position);
-    }
-
-    mWindow.setVerticalSyncEnabled(Config::ENABLE_VSYNC);
-    mWindow.setFramerateLimit(Config::FRAME_LIMIT);
-    mWindow.setMouseCursorVisible(!mIsFullscreen);
-
-    adjustView(mWindow.getSize(), mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
+    recreateWindow();
 }
 
 void Engine::processEvents() {
@@ -197,6 +178,7 @@ void Engine::processEvents() {
             mWindow.close();
         }
         else if (const auto* resizeEvent = event.getIf<sf::Event::Resized>()) {
+            // Gestion du redimensionnement (ALT-TAB ou changement de résolution)
             adjustView(resizeEvent->size, mCamera, Config::CAMERA_WIDTH / Config::CAMERA_HEIGHT);
         }
         else if (event.is<sf::Event::FocusLost>()) {
@@ -206,28 +188,17 @@ void Engine::processEvents() {
             mHasFocus = true;
         }
         else if (const auto* keyEvent = event.getIf<sf::Event::KeyPressed>()) {
-            if (keyEvent->code == sf::Keyboard::Key::Escape) {
-                mWindow.close();
-            }
-            else if (keyEvent->code == sf::Keyboard::Key::F11) {
-                toggleFullscreen();
-            }
+            if (keyEvent->code == sf::Keyboard::Key::Escape) mWindow.close();
+            else if (keyEvent->code == sf::Keyboard::Key::F11) toggleFullscreen();
         }
 
         if (!mHasFocus) continue;
-
         if (mGameManager->isInMenu() || mGameManager->isFinished()) {
             bool startRequested = false;
-
-            if (const auto* keyEvent = event.getIf<sf::Event::KeyPressed>()) {
-                if (keyEvent->code == sf::Keyboard::Key::Enter || keyEvent->code == sf::Keyboard::Key::Space) {
-                    startRequested = true;
-                }
-            }
-            else if (const auto* joyEvent = event.getIf<sf::Event::JoystickButtonPressed>()) {
-                if (joyEvent->button == 0 || joyEvent->button == 7) {
-                    startRequested = true;
-                }
+             if (const auto* keyEvent = event.getIf<sf::Event::KeyPressed>()) {
+                if (keyEvent->code == sf::Keyboard::Key::Enter || keyEvent->code == sf::Keyboard::Key::Space) startRequested = true;
+            } else if (const auto* joyEvent = event.getIf<sf::Event::JoystickButtonPressed>()) {
+                if (joyEvent->button == 0 || joyEvent->button == 7) startRequested = true;
             }
 
             if (startRequested) {
@@ -248,19 +219,14 @@ void Engine::update(sf::Time deltaTime) {
     bool justStarted = mGameManager->justStartedRace();
     mGameManager->update();
 
-    if (justStarted) {
-        mWorld->getPlayer().startClock();
-    }
+    if (justStarted) mWorld->getPlayer().startClock();
 
     if (mGameManager->isPlaying() && !mGameManager->isTimerRunning()) {
-        if (mWorld->isOnStartLine()) {
-            mGameManager->startTimer();
-        }
+        if (mWorld->isOnStartLine()) mGameManager->startTimer();
     }
 
     if (mGameManager->isPlaying()) {
         mWorld->update(deltaTime, mCamera);
-        mCameraManager->update(mCamera, mWorld->getCar().getPosition(), mWorld->getTrackBounds().size);
 
         if (mWorld->isLapComplete() && mWorld->getLapCount() >= 1) {
             float raceTime = mGameManager->getRaceTime();

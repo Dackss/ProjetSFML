@@ -10,33 +10,22 @@
 #include "Hud.h"
 #include "Camera.h"
 #include "GameManager.h"
-#include "Config.h"
 
-/// @brief Main game engine class
 class Engine {
 public:
-    /// @brief Constructor
     Engine();
-
-    /// @brief Run game loop
     void run();
 
 private:
-    /// @brief Process window events
     void processEvents();
-
-    /// @brief Update game state
-    /// @param deltaTime Time since last update
     void update(sf::Time deltaTime);
+    void render(float alpha);
 
-    /// @brief Render game
-    void render(float alpha = 1.0f);
-
-    /// @brief Toggle between Fullscreen and Windowed mode
+    // Nouvelle fonction pour gérer proprement la création/bascule
+    void recreateWindow();
     void toggleFullscreen();
 
 private:
-    // L'ordre de déclaration est important pour l'initialisation
     sf::ContextSettings mContextSettings;
     sf::RenderWindow mWindow;
     sf::View mCamera;
