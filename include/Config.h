@@ -27,8 +27,9 @@ namespace Config {
     inline constexpr float FPS = PHYSICS_FPS;
 
     // --- RENDU (VARIABLE) ---
-    inline constexpr bool ENABLE_VSYNC = true;
-    inline constexpr unsigned int FRAME_LIMIT = 0;
+    inline constexpr bool ENABLE_VSYNC = false;
+    inline constexpr unsigned int FRAME_LIMIT = 60;
+
     inline constexpr unsigned int ANTIALIASING_LEVEL = 0;
 
     // --- CAMERA ---
