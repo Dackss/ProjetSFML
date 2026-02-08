@@ -101,80 +101,89 @@ void Car::processSteering(float dt, const CarControls& inputs, float currentSpee
 }
 
 void Car::processPhysics(float dt, const CarControls& inputs, const sf::Vector2f& forward, bool onGrass) {
-    float currentForwardSpeed = mVelocity.x * forward.x + mVelocity.y * forward.y;
-    float speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
-    float currentSpeed = std::sqrt(speedSq);
-    float steerIntensity = std::abs(mCurrentSteer);
-
-    // Calcul du facteur exponentiel (carré) pour la progressivité
-    float steerFactor = steerIntensity * steerIntensity;
-
-    // --- GESTION PROGRESSIVE DE L'HERBE ---
+    // 1. Mise à jour progressive de l'intensité (Transition douce 1.5s)
     if (onGrass) {
-        mGrassIntensity = std::min(mGrassIntensity + dt * 1.0f, 1.0f);
+        mGrassIntensity = std::min(mGrassIntensity + dt * 0.8f, 1.0f);
     } else {
         mGrassIntensity = std::max(mGrassIntensity - dt * 2.0f, 0.0f);
     }
 
-    // --- ACCÉLÉRATION ---
-    float grassAccelFactor = 1.0f - (0.4f * mGrassIntensity);
-    float accel = Config::CAR_ACCELERATION * grassAccelFactor;
+    // --- A. ACCELERATION ---
+    float baseAccel = Config::CAR_ACCELERATION * 1.1f;
+    float accelPower = baseAccel;
+
+    // Perte de puissance progressive (max 10% de perte)
+    float grassPowerFactor = 1.0f - (0.1f * mGrassIntensity);
+    accelPower *= grassPowerFactor;
 
     if (inputs.accelerate) {
-        // Application de la courbe exponentielle aussi sur la perte d'accélération
-        // Pour que ce soit cohérent : on perd peu de puissance au début, et 20% à la fin.
-        accel *= (1.0f - (0.20f * steerFactor));
-
-        mVelocity += forward * accel * dt;
+        float steerFactor = std::abs(mCurrentSteer);
+        accelPower *= (1.0f - (0.05f * steerFactor));
+        mVelocity += forward * accelPower * dt;
     }
 
-    // --- FREINAGE ---
+    // --- B. FREINAGE ---
     if (inputs.brake) {
-        if (currentForwardSpeed > 1.0f) {
-             mVelocity -= forward * (Config::CAR_BRAKING * 1.7f) * dt;
+        sf::Vector2f velocityDir = mVelocity;
+        float speed = std::sqrt(mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y);
+
+        if (speed > 0.1f) {
+            velocityDir /= speed;
+            mVelocity -= velocityDir * (Config::CAR_BRAKING * 2.0f) * dt;
         } else {
-            float maxReverseSpeed = Config::CAR_MAX_SPEED * 0.25f;
-            if (currentForwardSpeed > -maxReverseSpeed) {
-                mVelocity -= forward * (Config::CAR_ACCELERATION * 0.8f) * dt;
-            }
+            mVelocity -= forward * (Config::CAR_ACCELERATION * 0.5f) * dt;
         }
     }
 
-    // --- FRICTION & RÉSISTANCE ---
-    if (speedSq > 0.001f) {
-        float friction = Config::CAR_FRICTION;
+    // --- C. FRICTION & RESISTANCE (La clé de la souplesse) ---
+    float currentSpeed = std::sqrt(mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y);
 
-        // Herbe progressive
-        float grassFrictionMod = 1.0f + (1.2f * mGrassIntensity);
-        friction *= grassFrictionMod;
+    if (currentSpeed > 0.0f) {
+        float rollingResistance = Config::CAR_FRICTION; // Base
+
+        // Friction progressive (plus faible qu'avant pour éviter le mur)
+        // Mais on compense par le Drag (voir plus bas)
+        rollingResistance += (3.0f * mGrassIntensity);
+
+        // Résistance virage
+        float steerFactor = std::abs(mCurrentSteer);
+        rollingResistance += (steerFactor * 4.0f);
 
         // Frein moteur
-        if (!inputs.accelerate && !inputs.brake) friction *= 1.2f;
+        if (!inputs.accelerate && !inputs.brake) rollingResistance += 2.0f;
 
-        // --- TIRE SCRUBBING (EXPONENTIEL) ---
-        // On utilise 'steerFactor' (le carré de l'intensité)
-        // Cela permet un début de virage très glissant (peu de frein)
-        // et un freinage plus marqué seulement si on insiste sur le volant.
-        // On garde le coefficient 0.17f pour l'intensité finale.
-        if (steerIntensity > 0.01f) {
-             friction += currentSpeed * 0.17f * steerFactor;
+        // --- RESISTANCE DE L'AIR (DRAG) ---
+        // C'est ici qu'on gère la vitesse max "naturelle" sur l'herbe
+        float dragFactor = 0.002f;
+
+        // Si on est sur l'herbe, l'air/sol résiste plus exponentiellement
+        // Cela va "manger" la vitesse de pointe doucement sans à-coup
+        if (onGrass) dragFactor = 0.005f;
+
+        float airResistance = (currentSpeed * currentSpeed) * dragFactor;
+        float totalDecel = (rollingResistance + airResistance) * dt;
+
+        float newSpeed = currentSpeed - totalDecel;
+        if (newSpeed < 0.0f) newSpeed = 0.0f;
+
+        if (currentSpeed > 0.0001f) {
+             mVelocity = (mVelocity / currentSpeed) * newSpeed;
+        } else {
+             mVelocity = {0.f, 0.f};
         }
-
-        float frictionFactor = 1.f - (friction / currentSpeed) * dt;
-        if (frictionFactor < 0.f) frictionFactor = 0.f;
-
-        mVelocity *= frictionFactor;
     }
 
-    // --- VITESSE MAX ---
-    float maxSpeedNormal = Config::CAR_MAX_SPEED;
-    float maxSpeedGrass = Config::CAR_MAX_SPEED_GRASS;
+    // --- D. VITESSE MAX ABSOLUE (Seulement pour le max global) ---
+    // SUPPRESSION DU CODE QUI LIMITAIT BRUTALEMENT SUR L'HERBE
+    float maxSpeed = Config::CAR_MAX_SPEED;
 
-    float currentMaxSpeed = maxSpeedNormal - (maxSpeedNormal - maxSpeedGrass) * mGrassIntensity;
+    // On ne touche plus à maxSpeed en fonction de l'herbe.
+    // C'est le "dragFactor" au-dessus qui empêchera naturellement d'atteindre
+    // la vitesse max si on est dans l'herbe.
 
-    speedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
-    if (speedSq > currentMaxSpeed * currentMaxSpeed) {
-        float k = currentMaxSpeed / std::sqrt(speedSq);
+    float finalSpeedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
+    if (finalSpeedSq > maxSpeed * maxSpeed) {
+        float k = maxSpeed / std::sqrt(finalSpeedSq);
         mVelocity *= k;
     }
 }
