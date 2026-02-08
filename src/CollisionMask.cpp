@@ -5,10 +5,42 @@ CollisionMask::CollisionMask() : mScale(1.0f) {}
 bool CollisionMask::loadFromFile(const std::string& path) {
     if (!mImage.loadFromFile(path)) return false;
 
-    // Initialisation du cache
-    // getPixelsPtr() renvoie un const std::uint8_t* en SFML 3
-    mPixelData = mImage.getPixelsPtr();
     mSize = mImage.getSize();
+    const std::uint8_t* pixels = mImage.getPixelsPtr();
+
+    // Initialisation de la grille
+    mGrid.resize(mSize.x * mSize.y);
+
+    // Pré-calcul complet de la carte
+    for (unsigned int y = 0; y < mSize.y; ++y) {
+        for (unsigned int x = 0; x < mSize.x; ++x) {
+            unsigned int i = (x + y * mSize.x) * 4;
+            std::uint8_t r = pixels[i];
+            std::uint8_t g = pixels[i + 1];
+            std::uint8_t b = pixels[i + 2];
+            // a = pixels[i+3] (non utilisé)
+
+            TerrainType type = TerrainType::ROAD; // Par défaut
+
+            // Logique de détection (ordre de priorité)
+            if (r == 0 && g == 0 && b == 0) {
+                type = TerrainType::WALL;
+            }
+            else if (r == 255 && g == 255 && b == 0) { // Jaune
+                type = TerrainType::GRASS;
+            }
+            else if (r == 0 && g == 255 && b == 0) {   // Vert
+                type = TerrainType::CHECKPOINT;
+            }
+            else if (r == 0 && g == 0 && b == 255) {   // Bleu
+                type = TerrainType::FINISH_LINE;
+            }
+
+            // Stockage linéaire
+            mGrid[x + y * mSize.x] = type;
+        }
+    }
+
     return true;
 }
 
@@ -26,41 +58,33 @@ sf::Vector2u CollisionMask::worldToImage(sf::Vector2f pos) const {
     );
 }
 
-// Helper optimisé avec std::uint8_t
-inline bool isColorMatch(const std::uint8_t* pixels, unsigned int x, unsigned int y, unsigned int width,
-                         std::uint8_t r, std::uint8_t g, std::uint8_t b) {
-    unsigned int index = (x + y * width) * 4;
-    return pixels[index] == r && pixels[index + 1] == g && pixels[index + 2] == b;
+// Méthode helper interne sécurisée
+TerrainType CollisionMask::getTerrainAt(unsigned int x, unsigned int y) const {
+    if (x >= mSize.x || y >= mSize.y) return TerrainType::GRASS; // Hors map = Herbe (ou Mur selon choix)
+    return mGrid[x + y * mSize.x];
 }
+
+// --- ACCESSEURS OPTIMISÉS (Lecture directe RAM) ---
 
 bool CollisionMask::isOnGrass(sf::Vector2f worldPos) const {
     sf::Vector2u p = worldToImage(worldPos);
-    if (p.x >= mSize.x || p.y >= mSize.y) return true;
-
-    // Vérifiez si votre masque utilise le Jaune ou le Vert pour l'herbe
-    // Ici : Jaune (255, 255, 0)
-    return isColorMatch(mPixelData, p.x, p.y, mSize.x, 255, 255, 0);
+    // Si hors map, c'est de l'herbe, sinon check la grille
+    return getTerrainAt(p.x, p.y) == TerrainType::GRASS;
 }
 
 bool CollisionMask::isOnGreen(sf::Vector2f worldPos) const {
     sf::Vector2u p = worldToImage(worldPos);
-    if (p.x >= mSize.x || p.y >= mSize.y) return false;
-    // Vert : Checkpoint (0, 255, 0)
-    return isColorMatch(mPixelData, p.x, p.y, mSize.x, 0, 255, 0);
+    return getTerrainAt(p.x, p.y) == TerrainType::CHECKPOINT;
 }
 
 bool CollisionMask::isOnBlue(sf::Vector2f worldPos) const {
     sf::Vector2u p = worldToImage(worldPos);
-    if (p.x >= mSize.x || p.y >= mSize.y) return false;
-    // Bleu : Ligne d'arrivée (0, 0, 255)
-    return isColorMatch(mPixelData, p.x, p.y, mSize.x, 0, 0, 255);
+    return getTerrainAt(p.x, p.y) == TerrainType::FINISH_LINE;
 }
 
 bool CollisionMask::isTraversable(sf::Vector2f worldPos) const {
     sf::Vector2u p = worldToImage(worldPos);
-    if (p.x >= mSize.x || p.y >= mSize.y) return false;
-
-    // Vérifie que ce n'est PAS Noir (0, 0, 0)
-    unsigned int index = (p.x + p.y * mSize.x) * 4;
-    return !(mPixelData[index] == 0 && mPixelData[index+1] == 0 && mPixelData[index+2] == 0);
+    TerrainType t = getTerrainAt(p.x, p.y);
+    // Traversable si ce n'est pas un MUR
+    return t != TerrainType::WALL;
 }

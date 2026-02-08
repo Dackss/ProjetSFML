@@ -4,7 +4,6 @@
 #include <string>
 
 namespace Config {
-    // --- CHEMINS ---
     inline const std::string ASSETS_PATH = "../assets/";
     inline const std::string TEXTURES_PATH = ASSETS_PATH + "textures/";
     inline const std::string FONTS_PATH = ASSETS_PATH + "fonts/";
@@ -14,43 +13,48 @@ namespace Config {
     inline const std::string FILE_MASK_HD = "circuit_mask.png";
     inline const std::string FILE_MASK_SD = "circuit_mask_sd.png";
 
-    // --- GRAPHIQUES & SYSTEME ---
     inline constexpr bool USE_BORDERLESS_FULLSCREEN = true;
     inline constexpr int WINDOW_WIDTH = 1280;
     inline constexpr int WINDOW_HEIGHT = 720;
 
-    // --- PHYSIQUE (FIXE) ---
     inline constexpr float PHYSICS_FPS = 60.0f;
     inline constexpr float TIME_PER_FRAME = 1.0f / PHYSICS_FPS;
-
-    // Alias pour compatibilité avec GhostManager.cpp
     inline constexpr float FPS = PHYSICS_FPS;
 
-    // --- RENDU (VARIABLE) ---
     inline constexpr bool ENABLE_VSYNC = false;
     inline constexpr unsigned int FRAME_LIMIT = 60;
-
     inline constexpr unsigned int ANTIALIASING_LEVEL = 0;
 
-    // --- CAMERA ---
+    // --- CAMERA (NOUVEAU) ---
     inline constexpr float CAMERA_WIDTH = 120.0f;
     inline constexpr float CAMERA_HEIGHT = 67.5f;
-    // Restauration de la constante requise par Camera.cpp
     inline constexpr float CAMERA_RESIZE_FACTOR = 10.67f;
 
-    // --- VOITURE ---
+    inline constexpr float CAMERA_LERP_SPEED = 5.0f;
+
+    // --- VOITURE (BASE) ---
     inline constexpr float CAR_SCALE = 0.0075f;
     inline constexpr float CAR_INITIAL_POS_X = 782.082f;
     inline constexpr float CAR_INITIAL_POS_Y = 458.342f;
     inline constexpr float CAR_INITIAL_ROTATION = 145.0f;
     inline constexpr float CAR_MAX_SPEED = 80.0f;
-
     inline constexpr float CAR_ACCELERATION = 20.0f;
     inline constexpr float CAR_BRAKING = 30.0f;
     inline constexpr float CAR_MAX_TURN_RATE = 90.0f;
     inline constexpr float CAR_FRICTION = 6.0f;
-    inline constexpr float CAR_MAX_SPEED_GRASS = 25.0f;
+    inline constexpr float CAR_MAX_SPEED_GRASS = 25.0f; // Gardé pour référence, mais géré par le Drag maintenant
     inline constexpr unsigned int TEXTURE_LIMIT_THRESHOLD = 4096;
+
+    // --- PHYSIQUE AVANCEE (NOUVEAU - NETTOYAGE MAGIC NUMBERS) ---
+    inline constexpr float CAR_ACCEL_BOOST = 1.1f;         // Boost global d'accélération
+    inline constexpr float GRASS_TRANSITION_IN = 0.8f;     // Vitesse d'entrée dans l'herbe
+    inline constexpr float GRASS_TRANSITION_OUT = 2.0f;    // Vitesse de sortie de l'herbe
+    inline constexpr float GRASS_POWER_LOSS = 0.1f;        // Perte de puissance moteur (10%)
+    inline constexpr float GRASS_FRICTION_ADDED = 3.0f;    // Friction ajoutée par l'herbe
+    inline constexpr float GRASS_DRAG_FACTOR = 0.005f;     // Résistance air sur herbe
+    inline constexpr float ROAD_DRAG_FACTOR = 0.002f;      // Résistance air sur route
+    inline constexpr float STEER_FRICTION_FACTOR = 4.0f;   // Friction ajoutée en braquant
+    inline constexpr float STEER_POWER_LOSS = 0.05f;       // Perte puissance en braquant
 
     // --- REGLES ---
     inline constexpr int COUNTDOWN_START_VALUE = 3;

@@ -47,21 +47,30 @@ void World::update(sf::Time deltaTime, sf::View& camera) {
     mCheckpoints.update(mPlayer.getCar().getPosition());
     mGhost.update(mPlayer.getCar(), mCheckpoints);
 
-    // --- Gestion Caméra ---
-    sf::Vector2f carPos = mPlayer.getCar().getPosition();
+    // --- Gestion Caméra Optimisée (Lerp) ---
+    sf::Vector2f targetPos = mPlayer.getCar().getPosition();
+    sf::Vector2f currentPos = camera.getCenter();
     sf::Vector2f viewSize = camera.getSize();
 
-    // Clamp de la caméra pour ne pas sortir du circuit
+    // Interpolation fluide (Frame-rate independent lerp)
+    float dt = deltaTime.asSeconds();
+    float t = Config::CAMERA_LERP_SPEED * dt;
+
+    // Formule simple de lerp vectoriel : A + (B - A) * t
+    sf::Vector2f newPos = currentPos + (targetPos - currentPos) * t;
+
+    // Clamp de la caméra (bornes du circuit)
+    // On utilise newPos pour vérifier les limites
     float minX = viewSize.x / 2.f;
     float maxX = std::max(minX, mTrackSize.x - viewSize.x / 2.f);
 
     float minY = viewSize.y / 2.f;
     float maxY = std::max(minY, mTrackSize.y - viewSize.y / 2.f);
 
-    carPos.x = std::clamp(carPos.x, minX, maxX);
-    carPos.y = std::clamp(carPos.y, minY, maxY);
+    newPos.x = std::clamp(newPos.x, minX, maxX);
+    newPos.y = std::clamp(newPos.y, minY, maxY);
 
-    camera.setCenter(carPos);
+    camera.setCenter(newPos);
 }
 
 void World::render(bool isPlaying, float alpha) {

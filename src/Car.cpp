@@ -101,24 +101,25 @@ void Car::processSteering(float dt, const CarControls& inputs, float currentSpee
 }
 
 void Car::processPhysics(float dt, const CarControls& inputs, const sf::Vector2f& forward, bool onGrass) {
-    // 1. Mise à jour progressive de l'intensité (Transition douce 1.5s)
+    // 1. Mise à jour progressive de l'intensité
     if (onGrass) {
-        mGrassIntensity = std::min(mGrassIntensity + dt * 0.8f, 1.0f);
+        mGrassIntensity = std::min(mGrassIntensity + dt * Config::GRASS_TRANSITION_IN, 1.0f);
     } else {
-        mGrassIntensity = std::max(mGrassIntensity - dt * 2.0f, 0.0f);
+        mGrassIntensity = std::max(mGrassIntensity - dt * Config::GRASS_TRANSITION_OUT, 0.0f);
     }
 
     // --- A. ACCELERATION ---
-    float baseAccel = Config::CAR_ACCELERATION * 1.1f;
+    float baseAccel = Config::CAR_ACCELERATION * Config::CAR_ACCEL_BOOST;
     float accelPower = baseAccel;
 
-    // Perte de puissance progressive (max 10% de perte)
-    float grassPowerFactor = 1.0f - (0.1f * mGrassIntensity);
+    // Perte de puissance progressive sur herbe
+    float grassPowerFactor = 1.0f - (Config::GRASS_POWER_LOSS * mGrassIntensity);
     accelPower *= grassPowerFactor;
 
     if (inputs.accelerate) {
         float steerFactor = std::abs(mCurrentSteer);
-        accelPower *= (1.0f - (0.05f * steerFactor));
+        // Perte de puissance en braquant
+        accelPower *= (1.0f - (Config::STEER_POWER_LOSS * steerFactor));
         mVelocity += forward * accelPower * dt;
     }
 
@@ -135,30 +136,28 @@ void Car::processPhysics(float dt, const CarControls& inputs, const sf::Vector2f
         }
     }
 
-    // --- C. FRICTION & RESISTANCE (La clé de la souplesse) ---
+    // --- C. FRICTION & RESISTANCE ---
     float currentSpeed = std::sqrt(mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y);
 
     if (currentSpeed > 0.0f) {
-        float rollingResistance = Config::CAR_FRICTION; // Base
+        float rollingResistance = Config::CAR_FRICTION;
 
-        // Friction progressive (plus faible qu'avant pour éviter le mur)
-        // Mais on compense par le Drag (voir plus bas)
-        rollingResistance += (3.0f * mGrassIntensity);
+        // Friction progressive Herbe
+        rollingResistance += (Config::GRASS_FRICTION_ADDED * mGrassIntensity);
 
         // Résistance virage
         float steerFactor = std::abs(mCurrentSteer);
-        rollingResistance += (steerFactor * 4.0f);
+        rollingResistance += (steerFactor * Config::STEER_FRICTION_FACTOR);
 
         // Frein moteur
         if (!inputs.accelerate && !inputs.brake) rollingResistance += 2.0f;
 
         // --- RESISTANCE DE L'AIR (DRAG) ---
-        // C'est ici qu'on gère la vitesse max "naturelle" sur l'herbe
-        float dragFactor = 0.002f;
+        float dragFactor = Config::ROAD_DRAG_FACTOR;
 
-        // Si on est sur l'herbe, l'air/sol résiste plus exponentiellement
-        // Cela va "manger" la vitesse de pointe doucement sans à-coup
-        if (onGrass) dragFactor = 0.005f;
+        // Transition fluide du drag vers celui de l'herbe
+        float grassDragDiff = Config::GRASS_DRAG_FACTOR - Config::ROAD_DRAG_FACTOR;
+        dragFactor += (grassDragDiff * mGrassIntensity);
 
         float airResistance = (currentSpeed * currentSpeed) * dragFactor;
         float totalDecel = (rollingResistance + airResistance) * dt;
@@ -173,15 +172,10 @@ void Car::processPhysics(float dt, const CarControls& inputs, const sf::Vector2f
         }
     }
 
-    // --- D. VITESSE MAX ABSOLUE (Seulement pour le max global) ---
-    // SUPPRESSION DU CODE QUI LIMITAIT BRUTALEMENT SUR L'HERBE
+    // --- D. VITESSE MAX ABSOLUE ---
     float maxSpeed = Config::CAR_MAX_SPEED;
-
-    // On ne touche plus à maxSpeed en fonction de l'herbe.
-    // C'est le "dragFactor" au-dessus qui empêchera naturellement d'atteindre
-    // la vitesse max si on est dans l'herbe.
-
     float finalSpeedSq = mVelocity.x * mVelocity.x + mVelocity.y * mVelocity.y;
+
     if (finalSpeedSq > maxSpeed * maxSpeed) {
         float k = maxSpeed / std::sqrt(finalSpeedSq);
         mVelocity *= k;

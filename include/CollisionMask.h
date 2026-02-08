@@ -3,7 +3,17 @@
 
 #include <SFML/Graphics.hpp>
 #include <string>
-#include <cstdint> // <--- IMPORTANT : Nécessaire pour std::uint8_t
+#include <vector>
+#include <cstdint>
+
+// Types de terrain simplifiés pour l'optimisation
+enum class TerrainType : uint8_t {
+    ROAD,
+    WALL,
+    GRASS,
+    CHECKPOINT,
+    FINISH_LINE
+};
 
 class CollisionMask {
 public:
@@ -13,17 +23,20 @@ public:
     void setScale(float scale);
 
     bool isOnGrass(sf::Vector2f worldPos) const;
-    bool isOnGreen(sf::Vector2f worldPos) const;
-    bool isOnBlue(sf::Vector2f worldPos) const;
+    bool isOnGreen(sf::Vector2f worldPos) const; // Checkpoint
+    bool isOnBlue(sf::Vector2f worldPos) const;  // Finish
     bool isTraversable(sf::Vector2f worldPos) const;
 
 private:
     sf::Vector2u worldToImage(sf::Vector2f pos) const;
+    TerrainType getTerrainAt(unsigned int x, unsigned int y) const;
+
+private:
     sf::Image mImage;
+    sf::Vector2u mSize;
     float mScale;
 
-    const std::uint8_t* mPixelData = nullptr;
-    sf::Vector2u mSize;
+    std::vector<TerrainType> mGrid;
 };
 
-#endif // COLLISIONMASK_H
+#endif
