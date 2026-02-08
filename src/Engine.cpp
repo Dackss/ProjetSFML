@@ -48,6 +48,8 @@ Engine::Engine()
     mGameManager = std::make_unique<GameManager>();
 
     mCameraManager->update(mCamera, mWorld->getCar().getPosition(), mWorld->getTrackBounds().size);
+
+    // Correction : Utilisation de la nouvelle méthode ajoutée au GhostManager
     mHud->setBestTimes(mWorld->getGhost().getBestTimes());
 }
 
@@ -173,7 +175,11 @@ void Engine::update(sf::Time deltaTime) {
     if (justStarted) mWorld->getPlayer().startClock();
 
     if (mGameManager->isPlaying() && !mGameManager->isTimerRunning()) {
-        if (mWorld->isOnStartLine()) mGameManager->startTimer();
+        if (mWorld->isOnStartLine()) {
+            mGameManager->startTimer();
+            // C'est ICI qu'on synchronise le fantôme avec le vrai temps
+            mWorld->startRace();
+        }
     }
 
     if (mGameManager->isPlaying()) {
@@ -182,11 +188,9 @@ void Engine::update(sf::Time deltaTime) {
         if (mWorld->isLapComplete() && mWorld->getLapCount() >= 1) {
             mGameManager->markLapFinished(mGameManager->getRaceTime());
             mMenu->setResultText(mGameManager->getResultText());
-            mWorld->getGhost().submitTime(mWorld->getPlayer().getElapsedTime());
             mHud->setBestTimes(mWorld->getGhost().getBestTimes());
         }
     }
-
     float speed = mWorld->getCar().getSpeed() * 3.6f;
     int countdown = mGameManager->isCountdown() ? mGameManager->getCountdownValue() : -2;
     mHud->update(speed, mGameManager->getRaceTime(), countdown, mWindow.getSize());

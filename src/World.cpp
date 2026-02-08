@@ -1,8 +1,8 @@
 #include "World.h"
 #include "Config.h"
 #include <stdexcept>
-#include <algorithm> // Pour std::clamp, std::max, std::min
-#include <cmath>     // Pour std::abs si nécessaire
+#include <algorithm>
+#include <cmath>
 
 World::World(sf::RenderWindow& window, AssetsManager& assetsManager)
         : mWindow(window), mAssetsManager(assetsManager),
@@ -10,60 +10,42 @@ World::World(sf::RenderWindow& window, AssetsManager& assetsManager)
           mPlayer(assetsManager.getTexture("voiture")),
           mGhost(assetsManager),
           mLapCount(0) {
-
-    std::string maskFilename;
-    if (mAssetsManager.isUsingSDAssets()) {
-        maskFilename = Config::FILE_MASK_SD;
-    } else {
-        maskFilename = Config::FILE_MASK_HD;
-    }
+    // ... (Chargement Mask inchangé) ...
+    std::string maskFilename = mAssetsManager.isUsingSDAssets() ? Config::FILE_MASK_SD : Config::FILE_MASK_HD;
     if (!mCollisionMask.loadFromFile(Config::TEXTURES_PATH + maskFilename)) {
         throw std::runtime_error("Failed to load " + maskFilename);
     }
+
     const sf::Texture& circuitTexture = mAssetsManager.getTexture("circuit");
     sf::Vector2u texSize = circuitTexture.getSize();
     float scaleFactor = static_cast<float>(Config::WINDOW_WIDTH) / static_cast<float>(texSize.x);
 
-    // Vérification de sécurité pour Raspberry Pi (Texture max size)
-    unsigned int maxSize = sf::Texture::getMaximumSize();
-    if (texSize.x > maxSize || texSize.y > maxSize) {
-        fprintf(stderr, "WARNING: Texture size (%u, %u) exceeds hardware limit (%u)!\n",
-                texSize.x, texSize.y, maxSize);
-    }
-
     mTrack.setScale(scaleFactor);
     mCollisionMask.setScale(scaleFactor);
-
-    // Taille réelle du monde
     mTrackSize = sf::Vector2f(texSize.x * scaleFactor, texSize.y * scaleFactor);
 
-    // Injection des dépendances
     mCheckpoints.setCollisionMask(&mCollisionMask);
-    mGhost.setCollisionMask(&mCollisionMask);
 }
 
 void World::update(sf::Time deltaTime, sf::View& camera) {
+    float dt = deltaTime.asSeconds();
+
     mPlayer.update(deltaTime, getTrackBounds(), mCollisionMask);
     mCheckpoints.update(mPlayer.getCar().getPosition());
-    mGhost.update(mPlayer.getCar(), mCheckpoints);
 
-    // --- Gestion Caméra Optimisée (Lerp) ---
+    // Le ghost ne se mettra à jour que si startRace() a été appelé
+    mGhost.update(dt, mPlayer.getCar());
+
+    // --- Caméra Lag ---
     sf::Vector2f targetPos = mPlayer.getCar().getPosition();
     sf::Vector2f currentPos = camera.getCenter();
     sf::Vector2f viewSize = camera.getSize();
 
-    // Interpolation fluide (Frame-rate independent lerp)
-    float dt = deltaTime.asSeconds();
     float t = Config::CAMERA_LERP_SPEED * dt;
-
-    // Formule simple de lerp vectoriel : A + (B - A) * t
     sf::Vector2f newPos = currentPos + (targetPos - currentPos) * t;
 
-    // Clamp de la caméra (bornes du circuit)
-    // On utilise newPos pour vérifier les limites
     float minX = viewSize.x / 2.f;
     float maxX = std::max(minX, mTrackSize.x - viewSize.x / 2.f);
-
     float minY = viewSize.y / 2.f;
     float maxY = std::max(minY, mTrackSize.y - viewSize.y / 2.f);
 
@@ -74,37 +56,28 @@ void World::update(sf::Time deltaTime, sf::View& camera) {
 }
 
 void World::render(bool isPlaying, float alpha) {
-    // 1. Définition de la vue et du Culling
+    // ... (Culling et Track render inchangé) ...
     const sf::View& currentView = mWindow.getView();
     sf::Vector2f center = currentView.getCenter();
     sf::Vector2f size = currentView.getSize();
-
-    // Marge de sécurité pour éviter le clipping sur les bords
     float buffer = 100.f;
-
-    // CORRECTION SFML 3 : On utilise des accolades {} pour créer des Vector2f
-    sf::FloatRect viewBounds(
-        {center.x - size.x / 2.f - buffer, center.y - size.y / 2.f - buffer}, // Position (Vector2f)
-        {size.x + buffer * 2.f, size.y + buffer * 2.f}                        // Taille (Vector2f)
-    );
-
-    // 2. Rendu du Circuit
-    // SFML 3 : Rect constructeur prend (Position, Taille)
+    sf::FloatRect viewBounds({center.x - size.x/2.f - buffer, center.y - size.y/2.f - buffer}, {size.x + buffer*2, size.y + buffer*2});
     sf::FloatRect trackRect({0.f, 0.f}, mTrackSize);
 
     if (viewBounds.findIntersection(trackRect)) {
         mTrack.render(mWindow);
     }
 
-    // 3. Rendu du Ghost
-    mGhost.render(mWindow, isPlaying, alpha);
-
-    // 4. Rendu du Joueur
+    mGhost.render(mWindow, isPlaying);
     mPlayer.render(mWindow, alpha);
 }
 
+// NOUVEAU
+void World::startRace() {
+    mGhost.startRecording();
+}
+
 sf::FloatRect World::getTrackBounds() const {
-    // Correction ici aussi par sécurité pour SFML 3
     return sf::FloatRect({0.f, 0.f}, mTrackSize);
 }
 
@@ -129,11 +102,9 @@ void World::reset() {
     mLapCount = 0;
 }
 
+// Getters inchangés
 Player& World::getPlayer() { return mPlayer; }
 Car& World::getCar() { return mPlayer.getCar(); }
 int World::getLapCount() const { return mLapCount; }
 GhostManager& World::getGhost() { return mGhost; }
-
-bool World::isOnStartLine() const {
-    return mCollisionMask.isOnBlue(mPlayer.getCar().getPosition());
-}
+bool World::isOnStartLine() const { return mCollisionMask.isOnBlue(mPlayer.getCar().getPosition()); }

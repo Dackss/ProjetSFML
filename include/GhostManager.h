@@ -3,65 +3,75 @@
 
 #include <SFML/Graphics.hpp>
 #include <vector>
-#include "Config.h"
+#include <string>
 #include "Car.h"
 #include "CheckpointManager.h"
 #include "AssetsManager.h"
 
-/// @brief Manages ghost car recording and playback
-class GhostManager {
-public:
-    /// @brief Constructor
-    /// @param assetsManager Resource manager
-    explicit GhostManager(AssetsManager& assetsManager);
-
-    /// @brief Update ghost state
-    /// @param car Player car
-    /// @param checkpoints Checkpoint manager
-    void update(const Car& car, const CheckpointManager& checkpoints);
-
-    /// @brief Render ghost
-    /// @param window Render target
-    /// @param isPlaying True if game is in playing state
-    void render(sf::RenderWindow& window, bool isPlaying, float alpha = 1.0f);
-
-    /// @brief Reset ghost data
-    void reset();
-
-    /// @brief Handle lap completion
-    /// @return True if lap processed
-    bool handleLapComplete();
-
-    /// @brief Submit race time
-    /// @param time Race time
-    void submitTime(sf::Time time);
-
-    /// @brief Get best times
-    /// @return Vector of best times
-    const std::vector<sf::Time>& getBestTimes() const;
-
-    /// @brief Set collision mask
-    /// @param mask Collision mask reference
-    void setCollisionMask(const CollisionMask* mask);
-
-    void saveGhostToFile(const std::string& filename);
-    void loadGhostFromFile(const std::string& filename);
-
-private:
-    std::vector<sf::Vector2f> mGhostPositions;    ///< Ghost positions
-    std::vector<float> mGhostRotations;           ///< Ghost rotations
-    std::vector<sf::Vector2f> mNewGhostPositions; ///< Temporary positions
-    std::vector<float> mNewGhostRotations;        ///< Temporary rotations
-    bool mRecording;                              ///< Recording state
-    bool mGhostEnabled;                           ///< Ghost enabled state
-    bool mHasRecordingStarted;                    ///< Recording started flag
-    bool mHasCrossedStart;                        ///< Start line crossed flag
-    std::size_t mGhostIndex;                      ///< Current ghost frame
-    int mGhostFrameCounter;                       ///< Frame counter
-    sf::Sprite mGhostSprite;                      ///< Ghost sprite
-    std::vector<sf::Time> mBestTimes;             ///< Best race times
-    const CollisionMask* mCollisionMask;          ///< Collision mask
-    const std::string GHOST_FILE = "best_ghost.dat";
+struct GhostPoint {
+    sf::Vector2f position;
+    float rotation;
 };
 
-#endif // GHOSTMANAGER_H
+class GhostData {
+public:
+    std::vector<GhostPoint> mPoints;
+    float mTotalTime = 0.0f;
+
+    void addPoint(const sf::Vector2f& pos, float rot) {
+        mPoints.push_back({pos, rot});
+    }
+
+    void reset() {
+        mPoints.clear();
+        mTotalTime = 0.0f;
+    }
+
+    bool isEmpty() const { return mPoints.empty(); }
+};
+
+class GhostManager {
+public:
+    explicit GhostManager(AssetsManager& assets);
+
+    void update(float dt, const Car& playerCar);
+    void render(sf::RenderWindow& window, bool isPlaying);
+
+    // Réinitialise l'état interne (accumulateurs)
+    void reset();
+
+    // NOUVEAU : Déclenche l'enregistrement réel (au franchissement de ligne)
+    void startRecording();
+
+    // Gère la fin de tour et la sauvegarde
+    bool handleLapComplete();
+
+    float getBestLapTime() const;
+    std::vector<sf::Time> getBestTimes() const;
+
+private:
+    void applyInterpolatedState(float time);
+
+    // NOUVEAU : Persistance fichier
+    void saveGhost();
+    void loadGhost();
+
+private:
+    AssetsManager& mAssets;
+    sf::Sprite mGhostSprite;
+
+    GhostData mBestGhost;
+    GhostData mCurrentGhost;
+
+    bool mIsRecording; // Si on est autorisé à enregistrer
+    bool mIsActive;    // NOUVEAU : Si la course a vraiment commencé (Timer lancé)
+    bool mHasGhost;
+
+    float mBestTime;
+    float mCurrentLapTime;
+    float mRecordAccumulator;
+
+    const std::string GHOST_FILE = "ghost.dat";
+};
+
+#endif

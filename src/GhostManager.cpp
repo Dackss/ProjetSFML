@@ -1,189 +1,184 @@
 #include "GhostManager.h"
-#include <algorithm>
-#include <fstream>
+#include "Config.h"
+#include <cmath>
+#include <iostream>
+#include <fstream> // Nécessaire pour les fichiers
 
-static sf::Vector2f lerp(const sf::Vector2f& a, const sf::Vector2f& b, float t) {
-    return a + (b - a) * t;
+GhostManager::GhostManager(AssetsManager& assets)
+    : mAssets(assets),
+      mGhostSprite(assets.getTexture("voiture")),
+      mIsRecording(false), // Faux par défaut, on attend la ligne de départ
+      mIsActive(false),
+      mHasGhost(false),
+      mBestTime(99999.0f),
+      mCurrentLapTime(0.0f),
+      mRecordAccumulator(0.0f)
+{
+    mGhostSprite.setScale({Config::CAR_SCALE, Config::CAR_SCALE});
+    sf::Vector2u size = mAssets.getTexture("voiture").getSize();
+    mGhostSprite.setOrigin({size.x / 2.f, size.y / 2.f});
+
+    // CORRECTION : Couleur Bleue (Cyan) semi-transparente
+    mGhostSprite.setColor(sf::Color(0, 255, 255, 120));
+
+    // Chargement du fantôme au démarrage
+    loadGhost();
 }
 
-static float lerpAngle(float a, float b, float t) {
-    float diff = b - a;
-    // Gestion du bouclage 0° <-> 360°
-    while (diff > 180.f) diff -= 360.f;
+void GhostManager::update(float dt, const Car& playerCar) {
+    // CORRECTION TIMING : Si la course n'est pas "Active" (ligne non franchie), on ne fait rien.
+    // Cela empêche le fantôme d'accumuler du temps pendant le "rolling start".
+    if (!mIsActive) return;
+
+    mCurrentLapTime += dt;
+
+    // --- ENREGISTREMENT ---
+    if (mIsRecording) {
+        float recordStep = 1.0f / Config::FPS;
+        mRecordAccumulator += dt;
+
+        while (mRecordAccumulator >= recordStep) {
+            mCurrentGhost.addPoint(playerCar.getPosition(), playerCar.getRotation());
+            mRecordAccumulator -= recordStep;
+        }
+    }
+
+    // --- LECTURE ---
+    if (mHasGhost && !mBestGhost.isEmpty()) {
+        applyInterpolatedState(mCurrentLapTime);
+    }
+}
+
+// NOUVEAU : Appelé par World quand la ligne de départ est franchie
+void GhostManager::startRecording() {
+    mIsActive = true;
+    mIsRecording = true;
+    mCurrentLapTime = 0.0f; // Reset précis du temps à 0.00s au top départ
+    mRecordAccumulator = 0.0f;
+    mCurrentGhost.reset();
+
+    // On ajoute le point initial (la ligne de départ)
+    // On ne peut pas récupérer la voiture ici facilement sans changer la signature,
+    // mais elle sera capturée à la frame suivante, ce qui est négligeable (16ms).
+}
+
+void GhostManager::applyInterpolatedState(float time) {
+    if (time >= mBestGhost.mTotalTime) {
+        if (!mBestGhost.mPoints.empty()) {
+            const auto& last = mBestGhost.mPoints.back();
+            mGhostSprite.setPosition(last.position);
+            mGhostSprite.setRotation(sf::degrees(last.rotation));
+        }
+        return;
+    }
+
+    float fps = Config::FPS;
+    float exactIndex = time * fps;
+
+    size_t indexA = static_cast<size_t>(exactIndex);
+    size_t indexB = indexA + 1;
+
+    if (indexA >= mBestGhost.mPoints.size()) return;
+    if (indexB >= mBestGhost.mPoints.size()) indexB = indexA;
+
+    const auto& pointA = mBestGhost.mPoints[indexA];
+    const auto& pointB = mBestGhost.mPoints[indexB];
+
+    float t = exactIndex - static_cast<float>(indexA);
+
+    sf::Vector2f pos = pointA.position + (pointB.position - pointA.position) * t;
+
+    float rotA = pointA.rotation;
+    float rotB = pointB.rotation;
+
+    float diff = rotB - rotA;
     while (diff < -180.f) diff += 360.f;
-    return a + diff * t;
+    while (diff > 180.f) diff -= 360.f;
+    float rot = rotA + diff * t;
+
+    mGhostSprite.setPosition(pos);
+    mGhostSprite.setRotation(sf::degrees(rot));
 }
 
-/// @brief Constructor
-/// @param assetsManager Resource manager
-GhostManager::GhostManager(AssetsManager& assetsManager)
-        : mGhostSprite(assetsManager.getTexture("voiture")) {
-    mGhostSprite.setOrigin(mGhostSprite.getLocalBounds().size / 2.f);
-
-    // Charger le fantôme s'il existe déjà sur le disque
-    loadGhostFromFile("best_ghost.dat");
-}
-
-/// @brief Reset ghost data
-void GhostManager::reset() {
-    mGhostIndex = 0;
-    mGhostFrameCounter = 0;
-    mRecording = false;
-    mHasRecordingStarted = false;
-    mHasCrossedStart = false;
-    mNewGhostPositions.clear();
-    mNewGhostRotations.clear();
-    mNewGhostPositions.reserve(12000);
-    mNewGhostRotations.reserve(12000);
-}
-
-/// @brief Update ghost state
-/// @param car Player car
-/// @param checkpoints Checkpoint manager
-void GhostManager::update(const Car& car, const CheckpointManager& checkpoints) {
-    (void)checkpoints; // Indique explicitement que le paramètre est ignoré pour l'instant
-
-    if (mRecording) {
-        mNewGhostPositions.push_back(car.getPosition());
-        mNewGhostRotations.push_back(car.getRotation());
-    }
-
-    /// Start recording when crossing start line
-    if (!mRecording && !mHasRecordingStarted && mCollisionMask->isOnBlue(car.getPosition())) {
-        mRecording = true;
-        mHasRecordingStarted = true;
-    }
-
-    /// Enable ghost display after crossing start line
-    if (!mHasCrossedStart && mCollisionMask->isOnBlue(car.getPosition())) {
-        mHasCrossedStart = true;
-    }
-
-    if (mGhostEnabled && mHasCrossedStart && mGhostIndex + 1 < mGhostPositions.size()) {
-        mGhostIndex++;
-    }
-}
-
-/// @brief Render ghost
-/// @param window Render target
-/// @param isPlaying True if game is in playing state
-void GhostManager::render(sf::RenderWindow& window, bool isPlaying, float alpha) {
-    // Vérification de sécurité : on doit avoir au moins 2 points pour interpoler
-    if (mGhostEnabled && mHasCrossedStart && isPlaying && mGhostIndex < mGhostPositions.size()) {
-
-        sf::Vector2f currentPos = mGhostPositions[mGhostIndex];
-        float currentRot = mGhostRotations[mGhostIndex];
-
-        size_t nextIndex = mGhostIndex + 1;
-        if (nextIndex >= mGhostPositions.size()) {
-            nextIndex = mGhostIndex;
-        }
-
-        sf::Vector2f nextPos = mGhostPositions[nextIndex];
-        float nextRot = mGhostRotations[nextIndex];
-
-        // Calcul de la position interpolée fluide
-        sf::Vector2f drawPos = lerp(currentPos, nextPos, alpha);
-        float drawRot = lerpAngle(currentRot, nextRot, alpha);
-
-        /// Update ghost sprite properties
-        mGhostSprite.setPosition(drawPos);
-        mGhostSprite.setRotation(sf::degrees(drawRot));
-        mGhostSprite.setColor(sf::Color(0, 200, 255, 120));
-        mGhostSprite.setScale({Config::CAR_SCALE, Config::CAR_SCALE});
-
+void GhostManager::render(sf::RenderWindow& window, bool isPlaying) {
+    // On n'affiche le fantôme que si la course est active (pas pendant le compte à rebours)
+    if (isPlaying && mHasGhost && mIsActive) {
         window.draw(mGhostSprite);
-
-        // Note : L'incrémentation de mGhostIndex reste dans update() !
     }
 }
 
-/// @brief Handle lap completion
-/// @return True if lap processed
 bool GhostManager::handleLapComplete() {
-    if (mRecording) {
-        if (mNewGhostPositions.size() < 50) return false;
+    float finalLapTime = mCurrentLapTime;
+    mCurrentGhost.mTotalTime = finalLapTime;
 
-        sf::Time newTime = sf::seconds(static_cast<float>(mNewGhostPositions.size()) / Config::FPS);
-        sf::Time oldTime = sf::seconds(static_cast<float>(mGhostPositions.size()) / Config::FPS);
+    if (finalLapTime < mBestTime) {
+        std::cout << "New Best Time Ghost! " << finalLapTime << "s" << std::endl;
+        mBestTime = finalLapTime;
+        mBestGhost = mCurrentGhost;
+        mHasGhost = true;
 
-        if (!mGhostEnabled || newTime < oldTime) {
-            mGhostPositions = mNewGhostPositions;
-            mGhostRotations = mNewGhostRotations;
-            mGhostEnabled = true;
+        saveGhost(); // SAUVEGARDE SUR DISQUE
 
-            saveGhostToFile("best_ghost.dat");
-        }
-
-        /// Clear temporary data
-        mNewGhostPositions.clear();
-        mNewGhostRotations.clear();
-        mRecording = false;
-        mGhostIndex = 0;
-        mGhostFrameCounter = 0;
+        reset(); // On stop tout en attendant le prochain passage de ligne
+        return true;
     }
 
-    return true;
+    reset();
+    return false;
 }
 
-/// @brief Submit race time
-/// @param time Race time
-void GhostManager::submitTime(sf::Time time) {
-    mBestTimes.push_back(time);
-    std::sort(mBestTimes.begin(), mBestTimes.end());
-
-    /// Keep top 3 times
-    if (mBestTimes.size() > 3) {
-        mBestTimes.pop_back();
-    }
+void GhostManager::reset() {
+    mCurrentGhost.reset();
+    mCurrentLapTime = 0.0f;
+    mRecordAccumulator = 0.0f;
+    mIsActive = false;    // On arrête le chrono interne
+    mIsRecording = false; // On arrête l'enregistrement
 }
 
-/// @brief Get best times
-/// @return Vector of best times
-const std::vector<sf::Time>& GhostManager::getBestTimes() const {
-    return mBestTimes;
+float GhostManager::getBestLapTime() const {
+    return mBestTime;
 }
 
-/// @brief Set collision mask
-/// @param mask Collision mask reference
-void GhostManager::setCollisionMask(const CollisionMask* mask) {
-    mCollisionMask = mask;
+std::vector<sf::Time> GhostManager::getBestTimes() const {
+    if (mBestTime > 9000.0f) return {};
+    return { sf::seconds(mBestTime) };
 }
 
-void GhostManager::saveGhostToFile(const std::string& filename) {
-    std::ofstream file(filename, std::ios::binary);
+// --- PERSISTANCE ---
+
+void GhostManager::saveGhost() {
+    std::ofstream file(GHOST_FILE, std::ios::binary);
     if (!file) return;
 
-    size_t size = mGhostPositions.size();
-    // 1. Sauvegarde la taille du vecteur
-    file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    // 1. Temps total
+    file.write(reinterpret_cast<const char*>(&mBestTime), sizeof(float));
 
-    if (size > 0) {
-        // 2. Sauvegarde les positions
-        file.write(reinterpret_cast<const char*>(mGhostPositions.data()), size * sizeof(sf::Vector2f));
-        // 3. Sauvegarde les rotations
-        file.write(reinterpret_cast<const char*>(mGhostRotations.data()), size * sizeof(float));
+    // 2. Nombre de points
+    size_t count = mBestGhost.mPoints.size();
+    file.write(reinterpret_cast<const char*>(&count), sizeof(size_t));
+
+    // 3. Les points (Raw Data)
+    if (count > 0) {
+        file.write(reinterpret_cast<const char*>(mBestGhost.mPoints.data()), count * sizeof(GhostPoint));
     }
-    file.close();
+    std::cout << "Ghost saved: " << count << " points, Time: " << mBestTime << std::endl;
 }
 
-void GhostManager::loadGhostFromFile(const std::string& filename) {
-    std::ifstream file(filename, std::ios::binary);
+void GhostManager::loadGhost() {
+    std::ifstream file(GHOST_FILE, std::ios::binary);
     if (!file) return;
 
-    size_t size;
-    // 1. Lit la taille
-    file.read(reinterpret_cast<char*>(&size), sizeof(size));
+    file.read(reinterpret_cast<char*>(&mBestTime), sizeof(float));
 
-    if (size > 0) {
-        mGhostPositions.resize(size);
-        mGhostRotations.resize(size);
-        // 2. Lit les positions
-        file.read(reinterpret_cast<char*>(mGhostPositions.data()), size * sizeof(sf::Vector2f));
-        // 3. Lit les rotations
-        file.read(reinterpret_cast<char*>(mGhostRotations.data()), size * sizeof(float));
+    size_t count = 0;
+    file.read(reinterpret_cast<char*>(&count), sizeof(size_t));
 
-        mGhostEnabled = true; // Active le fantôme s'il y a des données
+    mBestGhost.mPoints.resize(count);
+    if (count > 0) {
+        file.read(reinterpret_cast<char*>(mBestGhost.mPoints.data()), count * sizeof(GhostPoint));
     }
-    file.close();
+
+    mBestGhost.mTotalTime = mBestTime;
+    mHasGhost = true;
+    std::cout << "Ghost loaded: " << mBestTime << "s" << std::endl;
 }
